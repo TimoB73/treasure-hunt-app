@@ -37,7 +37,9 @@ export default function App() {
   const done = playing ? hunt.stations.slice(0, phase === 'travel' ? index : index + 1) : []
   const distance = target && geo.position ? distanceMeters(geo.position, target.position) : null
 
-  useEffect(() => saveProgress(hunt, progress), [progress])
+  useEffect(() => {
+    saveProgress(hunt, progress)
+  }, [progress])
 
   // Geofence: Ankunft automatisch erkennen
   useEffect(() => {
@@ -47,8 +49,12 @@ export default function App() {
     }
   }, [distance, radius])
 
-  // Beim Phasenwechsel nach oben scrollen, damit Kapitel und Rätsel sichtbar sind
-  useEffect(() => window.scrollTo({ top: 0 }), [phase, index])
+  // Beim Phasenwechsel nach oben scrollen, damit Kapitel und Rätsel sichtbar sind.
+  // Blockkörper ist Pflicht: Neuere Chrome-Versionen geben bei scrollTo() ein Promise zurück,
+  // das React sonst als Aufräumfunktion aufrufen würde („… is not a function“).
+  useEffect(() => {
+    window.scrollTo({ top: 0 })
+  }, [phase, index])
 
   return (
     <div className="mx-auto flex min-h-full max-w-xl flex-col">
