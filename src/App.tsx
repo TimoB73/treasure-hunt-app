@@ -8,6 +8,7 @@ import { demoHunt } from './game/demoHunt'
 import { loadProgress, reduceProgress, saveProgress, type Action, type Progress } from './game/progress'
 import { useGeolocation } from './hooks/useGeolocation'
 import { useTestMode } from './hooks/useTestMode'
+import { useWakeLock } from './hooks/useWakeLock'
 import { distanceMeters } from './lib/geo'
 
 const hunt = demoHunt
@@ -30,6 +31,7 @@ export default function App() {
   const { phase, index } = progress
   const playing = phase !== 'intro'
   const geo = useGeolocation(playing)
+  useWakeLock(playing && phase !== 'finished')
   const station = hunt.stations[index]
   const target = phase === 'travel' ? station : null
   const done = playing ? hunt.stations.slice(0, phase === 'travel' ? index : index + 1) : []

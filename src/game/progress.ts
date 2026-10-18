@@ -70,7 +70,12 @@ export function loadProgress(hunt: Hunt): Progress {
     const raw = localStorage.getItem(storageKey(hunt))
     if (raw) {
       const saved = JSON.parse(raw) as Progress
-      if (saved.huntId === hunt.id && saved.hintsUsed?.length === hunt.stations.length) return saved
+      const valid =
+        saved.huntId === hunt.id &&
+        saved.hintsUsed?.length === hunt.stations.length &&
+        saved.index >= 0 &&
+        saved.index < hunt.stations.length
+      if (valid) return saved
     }
   } catch {
     // Speicher nicht verfügbar oder beschädigt – neu beginnen

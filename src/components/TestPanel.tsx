@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import type { GeoState } from '../hooks/useGeolocation'
+import { clearErrors, readErrors } from '../lib/errorLog'
 
 interface Props {
   canMarkReached: boolean
@@ -15,6 +17,7 @@ const RADII = [10, 15, 20, 30, 50]
 
 /** Nur im versteckten Testmodus sichtbar */
 export function TestPanel({ canMarkReached, radius, geo, distance, onMarkReached, onRadiusChange, onReset, onClose }: Props) {
+  const [errors, setErrors] = useState(readErrors)
   return (
     <section className="rounded-2xl border-2 border-dashed border-fuchsia-500 bg-fuchsia-50 p-3 text-sm dark:bg-fuchsia-950/40">
       <div className="mb-2 flex items-center justify-between">
@@ -55,6 +58,29 @@ export function TestPanel({ canMarkReached, radius, geo, distance, onMarkReached
           : 'keine Position'}
         {distance != null && ` · Ziel ${distance.toFixed(1)} m`}
       </p>
+      {errors.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-fuchsia-700 dark:text-fuchsia-300">
+            Fehlerprotokoll ({errors.length})
+          </summary>
+          <ul className="mt-1 space-y-1 font-mono text-xs whitespace-pre-wrap break-words">
+            {errors.map((e) => (
+              <li key={e.at}>
+                {new Date(e.at).toLocaleTimeString('de-DE')} {e.message}
+              </li>
+            ))}
+          </ul>
+          <button
+            onClick={() => {
+              clearErrors()
+              setErrors([])
+            }}
+            className="mt-1 underline"
+          >
+            Protokoll löschen
+          </button>
+        </details>
+      )}
     </section>
   )
 }
