@@ -7,3 +7,8 @@ dev-dist
 !.env.example
 *.tsbuildinfo
 .DS_Store
+
+# Firebase
+.firebase
+firebase-debug.log
+firestore-debug.log

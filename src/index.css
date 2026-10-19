@@ -35,3 +35,22 @@ body {
   line-height: 1;
   text-align: center;
 }
+
+.number-icon {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  border-radius: 9999px;
+  background: var(--color-brand-600);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+}
+
+.number-icon-goal {
+  background: #15803d;
+}
