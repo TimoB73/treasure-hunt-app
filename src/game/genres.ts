@@ -4,6 +4,7 @@ export const GENRES = [
   { value: 'scifi', label: 'Science-Fiction', emoji: '🚀' },
   { value: 'fantasy', label: 'Fantasy', emoji: '🐉' },
   { value: 'krimi', label: 'Krimi', emoji: '🔍' },
+  { value: 'dreifragezeichen', label: 'Die drei ???', emoji: '❓' },
   { value: 'action', label: 'Action', emoji: '💥' },
   { value: 'macgyver', label: 'MacGyver', emoji: '🔧' },
   { value: 'horror', label: 'Horror', emoji: '👻' },

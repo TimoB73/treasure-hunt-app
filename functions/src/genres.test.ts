@@ -21,6 +21,7 @@ describe('Genre', () => {
   it('lehnt unbekannte Genres ab', () => {
     expect(huntParamsSchema.safeParse({ ...base, genre: 'western' }).success).toBe(false)
     expect(huntParamsSchema.parse({ ...base, genre: 'macgyver' }).genre).toBe('macgyver')
+    expect(huntParamsSchema.parse({ ...base, genre: 'dreifragezeichen' }).genre).toBe('dreifragezeichen')
   })
 
   it('macht Horror für Kinder harmlos', () => {

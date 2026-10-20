@@ -4,6 +4,8 @@ export const GENRES = {
   scifi: 'Science-Fiction – Raumschiffe, Roboter, Außerirdische oder Zukunftstechnik',
   fantasy: 'Fantasy – Magie, Drachen, Zauberer, verwunschene Orte',
   krimi: 'Krimi – ein rätselhafter Fall, Spuren, Verdächtige; die Gruppe ermittelt als Detektivteam',
+  dreifragezeichen:
+    'Detektivgeschichte im Stil von „Die drei ???“ – ein scheinbar übernatürliches Rätsel (Geister, Flüche, Spuk), das sich am Ende logisch aufklärt; die Spielenden sind ein junges Detektivteam. Erfinde eigene Figuren und Orte, verwende keine Namen, Figuren oder Zitate aus der Originalserie',
   action: 'Action – Verfolgungsjagd gegen die Zeit, Sabotage verhindern, mutige Rettung',
   macgyver:
     'MacGyver – mit Köpfchen und Alltagsgegenständen aus der Klemme improvisieren; Rätsel drehen sich um Tüfteln, Physik und clevere Lösungen (nur gedanklich – niemand baut oder zündet wirklich etwas)',
