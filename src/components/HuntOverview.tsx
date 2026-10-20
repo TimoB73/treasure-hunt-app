@@ -29,6 +29,8 @@ export function playLink(huntId: string): string {
 /** Übersicht für den Spielleiter: Route, Eckdaten, Link zum Teilen und (verdeckt) alle Lösungen */
 export function HuntOverview({ hunt, onPlay, onBack }: Props) {
   const [shareState, setShareState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  // Route verdeckt, damit ein mitspielender Spielleiter nicht alle Stationen vorab sieht
+  const [showRoute, setShowRoute] = useState(false)
   const { params, stats } = hunt
 
   const share = async () => {
@@ -71,17 +73,34 @@ export function HuntOverview({ hunt, onPlay, onBack }: Props) {
       </Card>
 
       <Card title="Route">
-        <div className="h-72 overflow-hidden rounded-xl">
-          <OverviewMap start={params.start} stations={hunt.stations.map((s) => s.position)} fitKey={hunt.id} />
-        </div>
-        <ol className="mt-3 space-y-1 text-sm">
-          {hunt.stations.map((s, i) => (
-            <li key={s.id}>
-              {i === hunt.stations.length - 1 ? '🏁' : `${i + 1}.`} {s.name}{' '}
-              {s.name !== s.kindLabel && <span className="text-stone-500">({s.kindLabel})</span>}
-            </li>
-          ))}
-        </ol>
+        {showRoute ? (
+          <>
+            <div className="h-72 overflow-hidden rounded-xl">
+              <OverviewMap start={params.start} stations={hunt.stations.map((s) => s.position)} fitKey={hunt.id} />
+            </div>
+            <ol className="mt-3 space-y-1 text-sm">
+              {hunt.stations.map((s, i) => (
+                <li key={s.id}>
+                  {i === hunt.stations.length - 1 ? '🏁' : `${i + 1}.`} {s.name}{' '}
+                  {s.name !== s.kindLabel && <span className="text-stone-500">({s.kindLabel})</span>}
+                </li>
+              ))}
+            </ol>
+            <button onClick={() => setShowRoute(false)} className="mt-2 text-sm text-stone-500 underline">
+              Route wieder verbergen
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-stone-500">
+              Beim Spielen zeigt die Karte immer nur die nächste Station – erst nach gelöstem Rätsel erscheint die
+              folgende.
+            </p>
+            <button onClick={() => setShowRoute(true)} className="mt-2 text-sm font-medium underline">
+              🔒 Alle Stationen auf der Karte zeigen (Spoiler)
+            </button>
+          </>
+        )}
         {params.groupCount > 1 && (
           <p className="mt-2 text-xs text-stone-500">
             Mehrere Gruppen laufen die Stationen später in versetzter Reihenfolge und treffen sich am Ziel 🏁 (Phase 4).
