@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { GeneratorError, generateHunt, type HuntParams } from '../game/generator'
+import { GENRES } from '../game/genres'
 import { useWakeLock } from '../hooks/useWakeLock'
 import type { LatLng } from '../lib/geo'
 import { Card, PrimaryButton } from './Card'
@@ -21,6 +22,7 @@ const DEFAULTS: Settings = {
   stationCount: 5,
   groupCount: 1,
   staggerMinutes: 5,
+  genre: 'beliebig',
 }
 
 /** Grobe Fortschrittsanzeige – die Cloud Function meldet keine Zwischenstände */
@@ -208,6 +210,27 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
               ]}
             />
           </Field>
+          <div className="grid gap-1">
+            <span className="text-sm font-medium">Genre</span>
+            <div className="grid grid-cols-3 gap-1">
+              {GENRES.map((g) => (
+                <button
+                  key={g.value}
+                  type="button"
+                  onClick={() => set('genre', g.value)}
+                  aria-pressed={settings.genre === g.value}
+                  className={`rounded-xl border px-1 py-2 text-xs font-medium ${
+                    settings.genre === g.value
+                      ? 'border-brand-600 bg-brand-50 text-brand-700 dark:bg-stone-800 dark:text-brand-500'
+                      : 'border-stone-300 text-stone-600 dark:border-stone-700 dark:text-stone-300'
+                  }`}
+                >
+                  <span className="block text-lg">{g.emoji}</span>
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <Field label="Schwierigkeit">
             <Segmented
               value={settings.difficulty}

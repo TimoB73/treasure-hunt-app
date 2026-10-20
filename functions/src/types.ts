@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { GENRE_KEYS } from './genres.js'
 
 export interface LatLng {
   lat: number
@@ -20,6 +21,8 @@ export const huntParamsSchema = z.object({
   stationCount: z.number().int().min(3).max(12),
   groupCount: z.number().int().min(1).max(10),
   staggerMinutes: z.number().int().min(0).max(60),
+  /** Genre der Geschichte; fehlt bei älteren App-Versionen */
+  genre: z.enum(GENRE_KEYS).default('beliebig'),
 })
 
 export type HuntParams = z.infer<typeof huntParamsSchema>

@@ -12,6 +12,7 @@ const params: HuntParams = {
   stationCount: 5,
   groupCount: 2,
   staggerMinutes: 5,
+  genre: 'beliebig',
 }
 
 /** Orte auf einem Raster um den Start; Weglänge = 1,3 × Luftlinie */
