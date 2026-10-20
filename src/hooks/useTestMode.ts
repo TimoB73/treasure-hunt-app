@@ -43,3 +43,5 @@ export function useTestMode() {
 
   return { enabled, setEnabled, registerTap }
 }
+
+export type TestMode = ReturnType<typeof useTestMode>
