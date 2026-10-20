@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import { z } from 'zod'
 import { UserFacingError, anthropicError } from './errors.js'
+import { GENRES, genreHint } from './genres.js'
 import type { AnswerSpec, HuntParams, Riddle } from './types.js'
 
 const MODEL = 'claude-opus-5-5'
@@ -82,6 +83,8 @@ Regeln – sie sind wichtiger als eine schöne Geschichte:
 
 7. Sprache: Deutsch, lebendig und altersgerecht. Längen: intro 80–150 Wörter (verrät noch keinen Ort), jedes chapter 40–90 Wörter, outro 80–150 Wörter, Fragen und Tipps je ein bis zwei Sätze. title höchstens 50 Zeichen.
 
+Das Genre prägt Figuren, Ton, Titel und die Einkleidung der Rätsel. Die Regeln oben gelten in jedem Genre.
+
 Antworte ausschließlich im vorgegebenen JSON-Format, mit genau einem Eintrag pro Station.`
 
 function buildUserPrompt(params: HuntParams, stations: StationFacts[]): string {
@@ -92,6 +95,7 @@ function buildUserPrompt(params: HuntParams, stations: StationFacts[]): string {
 - Schwierigkeit: ${DIFFICULTY[params.difficulty]}
 - Dauer insgesamt: etwa ${params.durationMinutes} Minuten, ${params.mode === 'bike' ? 'mit dem Fahrrad' : 'zu Fuß'}
 - Spieler: ${players}
+- Genre: ${GENRES[params.genre]}.${genreHint(params.genre, params.age)}
 
 Stationen (stationNumber, Art, Name und FAKTEN):
 ${JSON.stringify(stations, null, 2)}`

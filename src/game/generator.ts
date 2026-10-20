@@ -3,6 +3,7 @@ import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firesto
 import { httpsCallable } from 'firebase/functions'
 import { db, ensureSignedIn, functions } from '../lib/firebase'
 import type { LatLng } from '../lib/geo'
+import type { Genre } from './genres'
 import type { Hunt, Station } from './types'
 
 /** Eckdaten für den Generator (Spiegel von functions/src/types.ts) */
@@ -17,6 +18,8 @@ export interface HuntParams {
   stationCount: number
   groupCount: number
   staggerMinutes: number
+  /** Fehlt bei Jagden, die vor Einführung der Genres erzeugt wurden */
+  genre?: Genre
 }
 
 export interface GeneratedStation extends Station {

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { GeneratedHunt } from '../game/generator'
+import { genreLabel } from '../game/genres'
 import type { AnswerSpec } from '../lib/answer'
 import { formatDistance } from '../lib/geo'
 import { Card, PrimaryButton } from './Card'
@@ -67,7 +68,8 @@ export function HuntOverview({ hunt, onPlay, onBack }: Props) {
           </div>
         </dl>
         <p className="mt-2 text-xs text-stone-500">
-          {params.mode === 'bike' ? 'Fahrrad' : 'Zu Fuß'} · {params.difficulty} · ab {params.age} Jahren
+          {genreLabel(params.genre)} · {params.mode === 'bike' ? 'Fahrrad' : 'Zu Fuß'} · {params.difficulty} · ab{' '}
+          {params.age} Jahren
           {params.groupCount > 1 && ` · ${params.groupCount} Gruppen, ${params.staggerMinutes} min versetzt`}
         </p>
       </Card>
