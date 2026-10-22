@@ -28,16 +28,25 @@ Die Cloud Functions laufen nicht auf Vercel, sondern bei Firebase – siehe unte
 
 Ablauf der Cloud Function `generateHunt` (`functions/src/index.ts`, Region europe-west3):
 
-1. **Budget** (`route.ts`): aus Dauer, Stationszahl, Schwierigkeit, Alter und Fortbewegung die Ziel-Weglänge, Mindestabstände und den Suchradius berechnen.
+1. **Budget** (`route.ts`): aus Dauer, Stationszahl, Schwierigkeit, Alter und Fortbewegung die Ziel-Weglänge, Mindestabstände und den Suchradius berechnen. Zeitpuffer fürs Rätseln je Station: leicht 3, mittel 5, schwer 7 Minuten (+1 unter 10 Jahren). Ist ein **Zielpunkt** vorgegeben, prüft OpenRouteService zuerst, ob Start → Ziel plus Rätselzeit in die Dauer passt; sonst kommt eine Meldung mit der benötigten Zeit. Auch die fertig geplante Route wird so geprüft (10 % Spielraum).
 2. **Orte** (`poi.ts`): Overpass-Abfrage nach Brunnen, Denkmälern, Statuen, Kunstwerken, Aussichtspunkten, Spielplätzen, Parks und Kirchen. Aussortiert werden Orte näher als 25 m (Kinder unter 10: 40 m) an Hauptverkehrsstraßen, private Orte, Stolpersteine und große Flächen.
 3. **Route** (`ors.ts`, `route.ts`): Weglängen-Matrix von OpenRouteService (`foot-walking` / `cycling-regular`), dann Auswahl eines Rundkurses plus gemeinsamem Ziel nahe dem Start. Bewertet werden Abweichung von der Ziellänge, gleich lange Wege für alle Gruppen (rotierte Startstation), Ortsqualität und Abwechslung.
 4. **Fakten** (`wikipedia.ts`): ausgewählte OSM-Tags und – falls verlinkt – die Wikipedia-Einleitung.
-5. **Story** (`story.ts`): Im gewählten Genre (`genres.ts`: Beliebig, Science-Fiction, Fantasy, Krimi, Die drei ???, Action, MacGyver, Horror, Piraten, Agenten, Zeitreise, Märchen; Horror für Kinder unter 12 nur als harmloser Grusel) erzeugt Claude Titel, Intro, Kapitel, Rätsel (Zahl / Multiple Choice / Freitext), Lösung und 2 Tipps als JSON nach festem Schema. Zusätzlich geprüft: jede Station genau einmal, gültige Antworten, und **faktenbasierte Rätsel müssen ein wörtliches Zitat aus den mitgegebenen Fakten enthalten, in dem die Lösung steht** – sonst wird einmal mit Fehlerliste nachgefragt. Kapitel funktionieren in jeder Reihenfolge (für rotierte Gruppen).
+5. **Story** (`story.ts`): Im gewählten Genre (`genres.ts`: Beliebig, Science-Fiction, Fantasy, Krimi, Die drei ???, Action, MacGyver, Horror, Piraten, Agenten, Zeitreise, Märchen; Horror für Kinder unter 12 nur als harmloser Grusel) erzeugt Claude Titel, Intro, Kapitel, Rätsel (Zahl / Multiple Choice / Freitext), Lösung und 2 Tipps als JSON nach festem Schema. Zusätzlich geprüft: jede Station genau einmal, gültige Antworten, und **faktenbasierte Rätsel müssen ein wörtliches Zitat aus den mitgegebenen Fakten enthalten, in dem die Lösung steht** – sonst wird einmal mit Fehlerliste nachgefragt. Kapitel funktionieren in jeder Reihenfolge (für rotierte Gruppen). Pro Station gibt es außerdem einen Übergangstext, der nach dem gelösten Rätsel erscheint; erst nach „Weiter“ zeigt die Karte die nächste Station. „Mittel“ verlangt mindestens zwei Denkschritte und höchstens die Hälfte Multiple Choice, „schwer“ mindestens drei Denkschritte und höchstens ein Multiple Choice.
 6. **Speichern** unter `hunts/{id}`; der Spielleiter sieht Route, Lösungen und einen Link zum Teilen (`/?jagd=ID`).
 
 Fehler bei Schlüsseln, Guthaben oder Kontingenten (Claude, OpenRouteService, Overpass) kommen als verständliche Meldung mit „Was tun?“ im Formular an (`functions/src/errors.ts`).
 
-**Vorläufiger Kostenschutz** bis Phase 5: Login (anonym), max. 3 Jagden pro Nutzer und Monat, max. 20 Jagden pro Tag insgesamt, höchstens 3 parallele Instanzen. Fehlgeschlagene Versuche zählen nicht.
+## Zugang und Kostenschutz
+
+- **Mitspielen** geht ohne Konto: Wer den Link `/?jagd=ID` hat, kann die Jagd laden (Firestore-Regel `get: if true`; IDs sind nicht zu erraten).
+- **Erstellen** nur mit Konto (E-Mail + Passwort mit Pflicht-Bestätigung, optional Google), bestätigter E-Mail **und** Eintrag in der Gästeliste. Das prüft ausschließlich die Cloud Function (`functions/src/access.ts`), nicht der Client.
+- **Gästeliste:** Firestore-Sammlung `allowlist/{email}` – nur Cloud Functions lesen und schreiben. Pflege über die Admin-Seite in der App (`/?admin`).
+- **Admins:** Firestore-Sammlung `admins/{uid}`, einmalig von Hand in der Firebase Console angelegt. Die eigene UID steht in der App unter 👤 → „Mein Konto“ (und in der Console unter Authentication → Nutzer).
+- **Limit:** 10 Jagden pro Konto und Monat, Admins unbegrenzt. Zusätzlich ein Sicherheitsnetz von 30 Jagden pro Tag für alle Nicht-Admins zusammen. Fehlgeschlagene Versuche zählen nicht.
+- **Ablösung der anonymen Anmeldung:** Wer die App früher anonym genutzt hat, bekommt beim ersten Anmelden seine alten Jagden ins neue Konto übertragen (`claimAnonymousHunts`); das anonyme Konto wird gelöscht.
+
+Cloud Functions: `generateHunt`, `getAccount`, `manageAllowlist`, `claimAnonymousHunts`.
 
 ## Cloud Functions deployen
 

@@ -71,6 +71,7 @@ export function HuntOverview({ hunt, onPlay, onBack }: Props) {
           {genreLabel(params.genre)} · {params.mode === 'bike' ? 'Fahrrad' : 'Zu Fuß'} · {params.difficulty} · ab{' '}
           {params.age} Jahren
           {params.groupCount > 1 && ` · ${params.groupCount} Gruppen, ${params.staggerMinutes} min versetzt`}
+          {params.goal && ' · Ziel selbst gewählt'}
         </p>
       </Card>
 

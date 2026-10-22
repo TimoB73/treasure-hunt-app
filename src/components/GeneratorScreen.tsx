@@ -12,7 +12,7 @@ interface Props {
   onCancel: () => void
 }
 
-type Settings = Omit<HuntParams, 'start'>
+type Settings = Omit<HuntParams, 'start' | 'goal'>
 
 const DEFAULTS: Settings = {
   durationMinutes: 60,
@@ -29,8 +29,8 @@ const DEFAULTS: Settings = {
 const STEPS = [
   { after: 0, text: 'Suche geeignete Orte in der Umgebung …' },
   { after: 8, text: 'Berechne Wege zwischen den Orten …' },
-  { after: 16, text: 'Claude schreibt Geschichte und Rätsel … (dauert 1–3 Minuten)' },
-  { after: 120, text: 'Gleich fertig – die letzten Rätsel werden geprüft …' },
+  { after: 16, text: 'Claude schreibt Geschichte und Rätsel … (dauert 2–4 Minuten)' },
+  { after: 180, text: 'Gleich fertig – die letzten Rätsel werden geprüft …' },
 ]
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
@@ -100,6 +100,10 @@ function NumberInput({ value, min, max, onChange }: { value: number; min: number
 
 export function GeneratorScreen({ onCreated, onCancel }: Props) {
   const [start, setStart] = useState<LatLng | null>(null)
+  // Ziel optional selbst wählen; sonst nimmt der Generator einen Ort nahe am Start
+  const [customGoal, setCustomGoal] = useState(false)
+  const [goal, setGoal] = useState<LatLng | null>(null)
+  const [picking, setPicking] = useState<'start' | 'goal'>('start')
   const [fitKey, setFitKey] = useState(0)
   const [locating, setLocating] = useState(false)
   const [locateError, setLocateError] = useState<string | null>(null)
@@ -142,13 +146,15 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
     return () => clearInterval(timer)
   }, [running])
 
+  const ready = start != null && (!customGoal || goal != null)
+
   const submit = async () => {
-    if (!start) return
+    if (!start || !ready) return
     setRunning(true)
     setElapsed(0)
     setError(null)
     try {
-      onCreated(await generateHunt({ ...settings, start }))
+      onCreated(await generateHunt({ ...settings, start, ...(customGoal && goal ? { goal } : {}) }))
     } catch (e) {
       setError(e instanceof GeneratorError ? e : new GeneratorError(String(e)))
     } finally {
@@ -178,24 +184,72 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
     <>
       {error && <ErrorNotice title={error.message} action={error.action} />}
 
-      <Card title="Startpunkt">
+      <Card title={customGoal ? 'Start und Ziel' : 'Startpunkt'}>
+        {customGoal && (
+          <div className="mb-2 grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1 dark:bg-stone-800">
+            {(['start', 'goal'] as const).map((which) => (
+              <button
+                key={which}
+                type="button"
+                onClick={() => setPicking(which)}
+                className={`rounded-lg px-2 py-2 text-sm font-medium ${
+                  picking === which ? 'bg-white shadow dark:bg-stone-950' : 'text-stone-500'
+                }`}
+              >
+                {which === 'start' ? '🚩 Start setzen' : '🏁 Ziel setzen'}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="h-64 overflow-hidden rounded-xl">
-          <OverviewMap start={start} onPick={setStart} fitKey={fitKey} />
+          <OverviewMap
+            start={start}
+            goal={customGoal ? goal : null}
+            onPick={(point) => (customGoal && picking === 'goal' ? setGoal(point) : setStart(point))}
+            fitKey={fitKey}
+          />
         </div>
         <p className="mt-2 text-sm text-stone-500">
-          {start
-            ? 'Startpunkt gesetzt. Zum Ändern auf die Karte tippen.'
-            : 'Auf die Karte tippen, um den Startpunkt zu setzen.'}
+          {customGoal && picking === 'goal'
+            ? goal
+              ? 'Ziel gesetzt. Zum Ändern auf die Karte tippen.'
+              : 'Auf die Karte tippen, um das Ziel zu setzen – z. B. ein Spielplatz, Café oder der Parkplatz.'
+            : start
+              ? 'Startpunkt gesetzt. Zum Ändern auf die Karte tippen.'
+              : 'Auf die Karte tippen, um den Startpunkt zu setzen.'}
         </p>
         {locateError && <p className="mt-1 text-sm text-red-600">{locateError}</p>}
-        <button
-          type="button"
-          onClick={locate}
-          disabled={locating}
-          className="mt-2 rounded-lg border border-stone-300 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-stone-700"
-        >
-          {locating ? 'Standort wird ermittelt …' : '📍 Meinen Standort verwenden'}
-        </button>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setPicking('start')
+              locate()
+            }}
+            disabled={locating}
+            className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-stone-700"
+          >
+            {locating ? 'Standort wird ermittelt …' : '📍 Mein Standort als Start'}
+          </button>
+        </div>
+        <label className="mt-3 flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={customGoal}
+            onChange={(e) => {
+              setCustomGoal(e.target.checked)
+              setPicking(e.target.checked ? 'goal' : 'start')
+            }}
+            className="mt-0.5 h-4 w-4"
+          />
+          <span>
+            Ziel selbst festlegen
+            <span className="block text-xs text-stone-500">
+              Sonst wählt die App einen schönen Ort nahe am Start. Die App prüft, ob die Strecke in der Dauer schaffbar
+              ist.
+            </span>
+          </span>
+        </label>
       </Card>
 
       <Card title="Eckdaten">
@@ -249,7 +303,7 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
                 onChange={(e) => set('durationMinutes', Number(e.target.value))}
                 className={inputClass}
               >
-                {[30, 45, 60, 90, 120, 150, 180].map((m) => (
+                {[30, 45, 60, 90, 120, 150, 180, 210, 240].map((m) => (
                   <option key={m} value={m}>
                     {m} min
                   </option>
@@ -279,7 +333,8 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
         </div>
       </Card>
 
-      <PrimaryButton onClick={submit} disabled={!start}>
+      {customGoal && !goal && <p className="text-center text-sm text-stone-500">Bitte noch das Ziel auf der Karte setzen.</p>}
+      <PrimaryButton onClick={submit} disabled={!ready}>
         ✨ Jagd erzeugen
       </PrimaryButton>
       <button onClick={onCancel} className="text-sm text-stone-500 underline">

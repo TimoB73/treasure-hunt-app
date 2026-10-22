@@ -38,6 +38,7 @@ export const storySchema = z.object({
       stationNumber: z.number().int(),
       chapter: z.string(),
       riddle: riddleSchema,
+      transition: z.string(),
     }),
   ),
 })
@@ -49,13 +50,24 @@ export interface Story {
   intro: string
   outro: string
   /** In derselben Reihenfolge wie die übergebenen Stationen */
-  stations: { chapter: string; riddle: Riddle }[]
+  stations: { chapter: string; riddle: Riddle; transition: string }[]
 }
 
-const DIFFICULTY: Record<HuntParams['difficulty'], string> = {
-  leicht: 'leicht – Rätsel in einem Schritt lösbar, Rechenaufgaben im kleinen Einmaleins',
-  mittel: 'mittel – Rätsel mit ein bis zwei Denkschritten',
-  schwer: 'schwer – knifflige Rätsel mit mehreren Denkschritten, aber eindeutiger Lösung',
+/**
+ * Schwierigkeitsstufen – immer relativ zum Alter. „mittel“ war in Tests zu leicht,
+ * deshalb verlangt es jetzt ausdrücklich mehrere Denkschritte und schließt Standard-Scherzrätsel aus.
+ */
+export const DIFFICULTY: Record<HuntParams['difficulty'], string> = {
+  leicht: `LEICHT – jedes Rätsel ist in einem Denkschritt lösbar: einfache Rechenaufgabe, kurzes Wort- oder Scherzrätsel, eindeutige Multiple-Choice-Frage. Ziel: Erfolgserlebnis nach 1–2 Minuten.`,
+  mittel: `MITTEL – jedes Rätsel braucht mindestens zwei verknüpfte Denkschritte und ist beim ersten Lesen nicht sofort lösbar. Geeignet sind z. B.: Rechenkette mit drei bis vier Operationen oder einer Zwischengröße; Buchstaben- und Codeaufgaben (Anagramm, A=1 B=2 …, Cäsar-Verschiebung um eine genannte Zahl); Logikrätsel mit drei Bedingungen; Zahlenfolge mit nicht offensichtlicher Regel; zwei Angaben aus dem Kapitel kombinieren. Verboten sind bekannte Standard-Scherzrätsel (z. B. „Was wird nasser, je mehr es trocknet?“) und Fragen, deren Antwort man ohne Nachdenken errät. Höchstens die Hälfte der Rätsel ist Multiple Choice, und dann mit plausiblen Ablenkern. Ziel: 3–5 Minuten Knobeln in der Gruppe.`,
+  schwer: `SCHWER – jedes Rätsel braucht mindestens drei Denkschritte und kombiniert Techniken oder Informationen, z. B.: eine Zahl aus dem Kapitel ist der Schlüssel einer Cäsar-Verschiebung; Logikrätsel mit vier bis fünf Bedingungen; Worträtsel mit verstecktem Muster; mehrstufige Rechnung mit Umrechnung. Die Lösung ist nicht erratbar; höchstens ein Rätsel ist Multiple Choice. Ziel: 5–8 Minuten Knobeln, Tipps dürfen nötig sein.`,
+}
+
+/** Wie viele Multiple-Choice-Rätsel je Stufe erlaubt sind */
+export function maxChoiceRiddles(difficulty: HuntParams['difficulty'], stationCount: number): number {
+  if (difficulty === 'schwer') return 1
+  if (difficulty === 'mittel') return Math.floor(stationCount / 2)
+  return stationCount
 }
 
 const SYSTEM_PROMPT = `Du schreibst Schatzsuchen, die Gruppen draußen mit dem Handy an echten Orten spielen. Die App zeigt die Koordinaten der Stationen; an jeder Station erscheint dein Kapitel, danach dein Rätsel. Wer das Rätsel löst, bekommt die nächste Station freigeschaltet.
@@ -75,7 +87,11 @@ Regeln – sie sind wichtiger als eine schöne Geschichte:
    - text: nur wenn die Lösung ein einzelnes eindeutiges Wort (höchstens zwei) ist; textSolutions enthält alle gängigen Schreibweisen und Synonyme; numberSolution null, options [], choiceSolution null.
    Die Frage muss genau eine richtige Antwort haben.
 
-4. Genau zwei Tipps pro Rätsel: der erste gibt eine Denkrichtung, der zweite führt fast zur Lösung.
+4. Genau zwei Tipps pro Rätsel: der erste gibt eine Denkrichtung, ohne den Lösungsweg zu verraten; der zweite führt fast zur Lösung.
+
+4a. Schwierigkeit: Halte dich genau an die vorgegebene Stufe. Sie gilt relativ zum Alter – für Achtjährige ist „mittel“ leichter als für Erwachsene, soll die jeweilige Altersgruppe aber fordern. Ein Rätsel, das eine durchschnittliche Person dieses Alters ohne Nachdenken beantwortet, ist für „mittel“ und „schwer“ zu leicht. Prüfe jede Lösung selbst Schritt für Schritt nach.
+
+4b. transition: 1–3 Sätze (15–50 Wörter), die nach dem gelösten Rätsel erscheinen. Sie bestätigen die richtige Lösung im Ton der Geschichte und leiten zur nächsten Station über, ohne zu sagen, welcher Ort als Nächstes kommt oder wo er liegt (die App zeigt ihn danach auf der Karte; die Reihenfolge ist je Gruppe verschieden). Bei der Station mit isGoal true leitet transition stattdessen zum großen Finale über.
 
 5. Mehrere Gruppen besuchen die Stationen außer dem Ziel in unterschiedlicher, rotierter Reihenfolge. Die Kapitel dieser Stationen müssen deshalb in jeder Reihenfolge funktionieren: keine Wörter wie „erste“, „zweite“, „nächste“, „letzte“ oder „vorige“ Station, keine Bezüge auf andere Kapitel. Jedes Kapitel enthüllt ein eigenständiges Puzzleteil der Geschichte. Die Station mit isGoal true ist für alle das gemeinsame Finale; ihr Kapitel führt die Puzzleteile zusammen.
 
@@ -93,6 +109,7 @@ function buildUserPrompt(params: HuntParams, stations: StationFacts[]): string {
   return `Schreibe eine Schatzsuche mit diesen Eckdaten:
 - Alter des jüngsten Mitspielers: ${params.age} Jahre
 - Schwierigkeit: ${DIFFICULTY[params.difficulty]}
+- Höchstens ${maxChoiceRiddles(params.difficulty, stations.length)} Multiple-Choice-Rätsel insgesamt
 - Dauer insgesamt: etwa ${params.durationMinutes} Minuten, ${params.mode === 'bike' ? 'mit dem Fahrrad' : 'zu Fuß'}
 - Spieler: ${players}
 - Genre: ${GENRES[params.genre]}.${genreHint(params.genre, params.age)}
@@ -111,8 +128,17 @@ const normalize = (s: string) =>
 const numberSpellings = (n: number) => [String(n), String(n).replace('.', ',')]
 
 /** Prüft die Modellausgabe auf alles, was das JSON-Schema nicht ausdrücken kann */
-export function validateStory(story: StoryOutput, stations: StationFacts[]): string[] {
+export function validateStory(
+  story: StoryOutput,
+  stations: StationFacts[],
+  difficulty: HuntParams['difficulty'] = 'leicht',
+): string[] {
   const errors: string[] = []
+  const choices = story.stations.filter((s) => s.riddle.answerType === 'choice').length
+  const maxChoices = maxChoiceRiddles(difficulty, stations.length)
+  if (choices > maxChoices) {
+    errors.push(`Bei Schwierigkeit „${difficulty}“ sind höchstens ${maxChoices} Multiple-Choice-Rätsel erlaubt (erhalten: ${choices}). Ersetze die übrigen durch Zahl- oder Wort-Rätsel mit mehreren Denkschritten.`)
+  }
   const expected = stations.map((s) => s.stationNumber).sort((a, b) => a - b)
   const got = story.stations.map((s) => s.stationNumber).sort((a, b) => a - b)
   if (JSON.stringify(expected) !== JSON.stringify(got)) {
@@ -125,6 +151,7 @@ export function validateStory(story: StoryOutput, stations: StationFacts[]): str
     const facts = stations.find((s) => s.stationNumber === entry.stationNumber)
     const r = entry.riddle
     if (!entry.chapter.trim()) errors.push(`${label}: chapter ist leer.`)
+    if (!entry.transition.trim()) errors.push(`${label}: transition ist leer.`)
     if (!r.question.trim()) errors.push(`${label}: question ist leer.`)
     if (r.hints.length !== 2 || r.hints.some((h) => !h.trim())) errors.push(`${label}: genau zwei nicht leere Tipps nötig.`)
 
@@ -200,7 +227,11 @@ export async function generateStory(params: HuntParams, stations: StationFacts[]
         // Lehnt das Modell aus Richtliniengründen ab, versucht die API es serverseitig mit einem Ersatzmodell
         fallbacks: 'default',
         system: SYSTEM_PROMPT,
-        output_config: { effort: 'medium', format: betaZodOutputFormat(storySchema) },
+        // Gute, nachgeprüfte Knobelrätsel brauchen mehr Denkzeit als leichte
+        output_config: {
+          effort: params.difficulty === 'leicht' ? 'medium' : 'high',
+          format: betaZodOutputFormat(storySchema),
+        },
         messages,
       })
       const response = await stream.finalMessage()
@@ -218,7 +249,7 @@ export async function generateStory(params: HuntParams, stations: StationFacts[]
         response.stop_reason === 'max_tokens'
           ? ['Die Antwort wurde abgeschnitten – fasse dich kürzer.']
           : story
-            ? validateStory(story, stations)
+            ? validateStory(story, stations, params.difficulty)
             : ['Die Antwort entsprach nicht dem JSON-Schema.']
       if (story && problems.length === 0) {
         const byNumber = new Map(story.stations.map((s) => [s.stationNumber, s]))
@@ -228,7 +259,7 @@ export async function generateStory(params: HuntParams, stations: StationFacts[]
           outro: story.outro.trim(),
           stations: stations.map((s) => {
             const entry = byNumber.get(s.stationNumber)!
-            return { chapter: entry.chapter.trim(), riddle: toRiddle(entry.riddle) }
+            return { chapter: entry.chapter.trim(), riddle: toRiddle(entry.riddle), transition: entry.transition.trim() }
           }),
         }
       }

@@ -1,6 +1,7 @@
 import type { Hunt } from './types'
 
-export type Phase = 'intro' | 'travel' | 'chapter' | 'riddle' | 'finished'
+/** solved: Rätsel gelöst, Überleitung wird gezeigt – die nächste Station erscheint erst nach „Weiter“ */
+export type Phase = 'intro' | 'travel' | 'chapter' | 'riddle' | 'solved' | 'finished'
 
 export interface Progress {
   huntId: string
@@ -19,6 +20,7 @@ export type Action =
   | { type: 'arrive' }
   | { type: 'openRiddle' }
   | { type: 'solve'; now: number }
+  | { type: 'continue'; now: number }
   | { type: 'wrongAnswer' }
   | { type: 'revealHint' }
   | { type: 'reset' }
@@ -43,8 +45,10 @@ export function reduceProgress(hunt: Hunt, state: Progress, action: Action): Pro
       return state.phase === 'travel' ? { ...state, phase: 'chapter' } : state
     case 'openRiddle':
       return state.phase === 'chapter' ? { ...state, phase: 'riddle' } : state
-    case 'solve': {
-      if (state.phase !== 'riddle') return state
+    case 'solve':
+      return state.phase === 'riddle' ? { ...state, phase: 'solved' } : state
+    case 'continue': {
+      if (state.phase !== 'solved') return state
       const last = state.index >= hunt.stations.length - 1
       return last
         ? { ...state, phase: 'finished', finishedAt: action.now }

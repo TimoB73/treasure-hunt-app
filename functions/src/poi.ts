@@ -121,10 +121,20 @@ export function roadClearance(params: Pick<HuntParams, 'age'>): number {
 }
 
 /** Wandelt die Overpass-Antwort in bewertete, sichere Orte um */
-export function extractPois(result: OverpassResult, params: Pick<HuntParams, 'age'>): Poi[] {
-  const roads = result.elements
+function majorRoads(result: OverpassResult): LatLng[][] {
+  return result.elements
     .filter((e) => e.type === 'way' && e.geometry && e.tags?.highway)
     .map((e) => e.geometry!.map((p) => ({ lat: p.lat, lng: p.lon })))
+}
+
+/** Liegt der Punkt zu nah an einer Hauptverkehrsstraße? (Die Abfrage muss den Punkt abdecken.) */
+export function isNearMajorRoad(result: OverpassResult, point: LatLng, params: Pick<HuntParams, 'age'>): boolean {
+  const clearance = roadClearance(params)
+  return majorRoads(result).some((road) => distanceToPolyline(point, road) < clearance)
+}
+
+export function extractPois(result: OverpassResult, params: Pick<HuntParams, 'age'>): Poi[] {
+  const roads = majorRoads(result)
   const clearance = roadClearance(params)
 
   const pois: Poi[] = []

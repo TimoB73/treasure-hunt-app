@@ -139,6 +139,22 @@ export function HuntPlayer({ hunt, testMode, onExit }: Props) {
           />
         )}
 
+        {phase === 'solved' && (
+          <Card title="Richtig gelöst! 🎉">
+            <p className="leading-relaxed">
+              {station.transition ??
+                (index < hunt.stations.length - 1
+                  ? 'Stark! Die nächste Station ist freigeschaltet.'
+                  : 'Geschafft – das war das letzte Rätsel!')}
+            </p>
+            <div className="mt-4">
+              <PrimaryButton onClick={() => dispatch({ type: 'continue', now: Date.now() })}>
+                {index < hunt.stations.length - 1 ? 'Weiter zur nächsten Station' : 'Zum Finale'}
+              </PrimaryButton>
+            </div>
+          </Card>
+        )}
+
         {phase === 'finished' && (
           <Card title="🏆 Schatz gefunden!">
             <p className="leading-relaxed">{hunt.outro}</p>

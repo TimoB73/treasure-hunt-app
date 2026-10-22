@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { distanceMeters } from './geo.js'
-import { planBudget, seededRandom, selectRoute, startOffset } from './route.js'
+import { assertFeasible, neededMinutes, planBudget, searchArea, seededRandom, selectRoute, startOffset } from './route.js'
 import type { HuntParams, Poi } from './types.js'
 
 const params: HuntParams = {
@@ -39,8 +39,8 @@ function grid(): { pois: Poi[]; matrix: number[][] } {
 describe('planBudget', () => {
   it('rechnet die Weglänge aus Dauer, Stationszeit und Tempo', () => {
     const b = planBudget(params)
-    expect(b.stationMinutes).toBe(4)
-    expect(b.targetMeters).toBe((60 - 5 * 4) * 70)
+    expect(b.stationMinutes).toBe(5)
+    expect(b.targetMeters).toBe((60 - 5 * 5) * 70)
   })
 
   it('lehnt zu kurze Dauer ab', () => {
@@ -97,5 +97,57 @@ describe('startOffset', () => {
   it('verteilt Gruppen gleichmäßig über den Rundkurs', () => {
     expect([0, 1, 2].map((g) => startOffset(g, 3, 6))).toEqual([0, 2, 4])
     expect([0, 1].map((g) => startOffset(g, 2, 4))).toEqual([0, 2])
+  })
+})
+
+describe('vorgegebenes Ziel', () => {
+  it('nutzt das vorgegebene Ziel als letzte Station', () => {
+    const { pois, matrix } = grid()
+    const goal = pois.length - 1
+    const plan = selectRoute(params.start, pois, matrix, params, planBudget(params), seededRandom(3), goal)
+    expect(plan.goal).toBe(goal)
+    expect(plan.loop).not.toContain(goal)
+  })
+
+  it('meldet ein unerreichbares Ziel', () => {
+    const { pois, matrix } = grid()
+    const goal = pois.length - 1
+    matrix[0][goal + 1] = Infinity
+    expect(() => selectRoute(params.start, pois, matrix, params, planBudget(params), seededRandom(3), goal)).toThrow(
+      /nicht erreichbar/,
+    )
+  })
+
+  it('sucht Orte um die Mitte zwischen Start und Ziel', () => {
+    const withGoal = { ...params, goal: { lat: 48.02, lng: 11 } }
+    const area = searchArea(withGoal, planBudget(withGoal))
+    expect(area.center.lat).toBeCloseTo(48.01)
+    expect(area.radius).toBeGreaterThan(1100)
+  })
+})
+
+describe('assertFeasible', () => {
+  const budget = planBudget(params)
+
+  it('lässt schaffbare Strecken durch', () => {
+    expect(() => assertFeasible(1000, params, budget, 'direct')).not.toThrow()
+  })
+
+  it('nennt die benötigte Zeit, wenn die Dauer nicht reicht', () => {
+    // 3,5 km zu Fuß ≈ 50 min + 5 Stationen × 5 min = 75 min > 60 min
+    expect(neededMinutes(3500, params, budget)).toBe(75)
+    expect(() => assertFeasible(3500, { ...params, goal: { lat: 48.03, lng: 11 } }, budget, 'direct')).toThrow(
+      /mindestens 75 Minuten – gewählt sind 60/,
+    )
+    try {
+      assertFeasible(3500, params, budget, 'direct')
+    } catch (e) {
+      expect((e as { action: string }).action).toMatch(/mindestens 75 Minuten erhöhen/)
+    }
+  })
+
+  it('erlaubt bei der geplanten Route etwas Spielraum', () => {
+    // 2,8 km ≈ 40 min + 25 min = 65 min: über 60, aber innerhalb von 10 %
+    expect(() => assertFeasible(2800, params, budget, 'planned', 1.1)).not.toThrow()
   })
 })

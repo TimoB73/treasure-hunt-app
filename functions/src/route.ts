@@ -1,5 +1,5 @@
 import { UserFacingError } from './errors.js'
-import { angle } from './geo.js'
+import { angle, distanceMeters } from './geo.js'
 import type { HuntParams, LatLng, Poi } from './types.js'
 
 export interface Budget {
@@ -16,7 +16,8 @@ export interface Budget {
   searchRadius: number
 }
 
-const STATION_MINUTES = { leicht: 3, mittel: 4, schwer: 6 } as const
+/** Zeitpuffer je Station für Kapitel und Rätsel; anspruchsvollere Rätsel brauchen länger */
+const STATION_MINUTES = { leicht: 3, mittel: 5, schwer: 7 } as const
 
 export function planBudget(p: HuntParams): Budget {
   const stationMinutes = STATION_MINUTES[p.difficulty] + (p.age < 10 ? 1 : 0)
@@ -68,6 +69,7 @@ export function startOffset(group: number, groupCount: number, loopLength: numbe
 /**
  * Wählt aus den Kandidaten einen Rundkurs plus gemeinsames Ziel.
  * `matrix` enthält Weglängen; Index 0 ist der Startpunkt, Index i + 1 der Kandidat i.
+ * Mit `fixedGoal` ist das Ziel vorgegeben (Index in candidates), sonst wählt die Funktion einen Ort nahe am Start.
  */
 export function selectRoute(
   start: LatLng,
@@ -76,6 +78,7 @@ export function selectRoute(
   params: HuntParams,
   budget: Budget,
   random: () => number,
+  fixedGoal?: number,
 ): RoutePlan {
   const d = (a: number, b: number) => matrix[a + 1][b + 1]
   const fromStart = (c: number) => matrix[0][c + 1]
@@ -83,15 +86,20 @@ export function selectRoute(
   const apart = (a: number, b: number) => Math.min(d(a, b), d(b, a))
 
   const reachable = candidates.map((_, i) => i).filter((i) => Number.isFinite(fromStart(i)) && Number.isFinite(toStart(i)))
+  if (fixedGoal != null && !reachable.includes(fixedGoal)) throw goalUnreachable(params)
   if (reachable.length < params.stationCount) throw tooFewPlaces(params, reachable.length)
 
-  // Ziel: gut bewerteter Ort nahe am Start, damit alle Gruppen dort zusammenkommen und der Rückweg kurz ist
+  // Ziel: vorgegeben – oder ein gut bewerteter Ort nahe am Start, damit alle Gruppen dort zusammenkommen
   const nearLimit = Math.max(250, budget.loopRadius * 0.5)
   const near = reachable.filter((i) => fromStart(i) <= nearLimit)
-  const goal = (near.length ? near : reachable).reduce((best, i) => {
-    const value = (j: number) => candidates[j].score - fromStart(j) / nearLimit
-    return value(i) > value(best) ? i : best
-  })
+  const goal =
+    fixedGoal ??
+    (near.length ? near : reachable).reduce((best, i) => {
+      const value = (j: number) => candidates[j].score - fromStart(j) / nearLimit
+      return value(i) > value(best) ? i : best
+    })
+  // Der Rundkurs liegt um den Start – bei vorgegebenem Ziel zwischen Start und Ziel
+  const center = fixedGoal != null ? midpoint(start, candidates[goal].position) : start
 
   const loopSize = params.stationCount - 1
   const groupCount = Math.min(params.groupCount, loopSize)
@@ -149,7 +157,7 @@ export function selectRoute(
       }
       if (chosen.length < loopSize) continue
 
-      chosen.sort((a, b) => angle(start, candidates[a].position) - angle(start, candidates[b].position))
+      chosen.sort((a, b) => angle(center, candidates[a].position) - angle(center, candidates[b].position))
       const loop = improve(chosen)
       const lengths = routeLengths(loop)
       if (lengths.some((l) => !Number.isFinite(l))) continue
@@ -169,6 +177,62 @@ export function selectRoute(
     if (best) return { loop: best.loop, goal, groupMeters: best.lengths }
   }
   throw tooFewPlaces(params, reachable.length)
+}
+
+export function midpoint(a: LatLng, b: LatLng): LatLng {
+  return { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 }
+}
+
+/** Suchgebiet für Orte: um den Start, bei vorgegebenem Ziel um die Mitte und groß genug für beide */
+export function searchArea(params: HuntParams, budget: Budget): { center: LatLng; radius: number } {
+  if (!params.goal) return { center: params.start, radius: budget.searchRadius }
+  const half = distanceMeters(params.start, params.goal) / 2
+  const max = params.mode === 'bike' ? 10000 : 4000
+  return {
+    center: midpoint(params.start, params.goal),
+    radius: Math.min(Math.max(budget.searchRadius, half + budget.loopRadius), max),
+  }
+}
+
+/** Minuten, die eine Gruppe für Weg plus Rätsel braucht */
+export function neededMinutes(routeMeters: number, params: HuntParams, budget: Budget): number {
+  return Math.ceil(routeMeters / budget.metersPerMinute + params.stationCount * budget.stationMinutes)
+}
+
+const formatKm = (m: number) => `${(m / 1000).toFixed(1).replace('.', ',')} km`
+const roundUp = (minutes: number) => Math.ceil(minutes / 15) * 15
+
+/**
+ * Prüft, ob die Jagd in der gewählten Dauer schaffbar ist.
+ * `routeMeters` ist die (kürzeste bzw. geplante) Weglänge laut OpenRouteService.
+ * `tolerance` lässt etwas Spielraum, weil Dauer ohnehin eine Schätzung ist.
+ */
+export function assertFeasible(routeMeters: number, params: HuntParams, budget: Budget, kind: 'direct' | 'planned', tolerance = 1): void {
+  const needed = neededMinutes(routeMeters, params, budget)
+  if (needed <= params.durationMinutes * tolerance) return
+  const walk = Math.ceil(routeMeters / budget.metersPerMinute)
+  const how = params.mode === 'bike' ? 'mit dem Rad' : 'zu Fuß'
+  const what =
+    kind === 'direct'
+      ? `Schon der direkte Weg vom Start zum Ziel ist ${formatKm(routeMeters)} lang (${how} ≈ ${walk} min).`
+      : `Die beste gefundene Route ist ${formatKm(routeMeters)} lang (${how} ≈ ${walk} min).`
+  throw new UserFacingError(
+    'failed-precondition',
+    'too_long',
+    `${what} Mit ${params.stationCount} Stationen à ${budget.stationMinutes} min fürs Rätseln braucht ihr ${kind === 'direct' ? 'mindestens ' : 'etwa '}${needed} Minuten – gewählt sind ${params.durationMinutes}.`,
+    needed <= 240
+      ? `Dauer auf mindestens ${Math.min(240, roundUp(needed))} Minuten erhöhen, weniger Stationen wählen${params.goal ? ' oder Start und Ziel näher zusammenlegen' : ''}.`
+      : `Das ist für eine Jagd zu weit. Start und Ziel näher zusammenlegen oder weniger Stationen wählen.`,
+  )
+}
+
+function goalUnreachable(params: HuntParams): UserFacingError {
+  return new UserFacingError(
+    'failed-precondition',
+    'goal_unreachable',
+    `Der gewählte Zielpunkt ist ${params.mode === 'bike' ? 'mit dem Rad' : 'zu Fuß'} nicht erreichbar.`,
+    'Den Zielpunkt auf einen Weg oder Platz in der Nähe setzen.',
+  )
 }
 
 function tooFewPlaces(params: HuntParams, found: number): UserFacingError {

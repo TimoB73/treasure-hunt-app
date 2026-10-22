@@ -1,7 +1,7 @@
 import { FirebaseError } from 'firebase/app'
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
-import { db, ensureSignedIn, functions } from '../lib/firebase'
+import { auth, db, functions } from '../lib/firebase'
 import type { LatLng } from '../lib/geo'
 import type { Genre } from './genres'
 import type { Hunt, Station } from './types'
@@ -9,6 +9,8 @@ import type { Hunt, Station } from './types'
 /** Eckdaten für den Generator (Spiegel von functions/src/types.ts) */
 export interface HuntParams {
   start: LatLng
+  /** Selbst gewählter Zielpunkt; ohne wählt der Generator einen Ort nahe am Start */
+  goal?: LatLng
   durationMinutes: number
   difficulty: 'leicht' | 'mittel' | 'schwer'
   /** Alter des jüngsten Mitspielers */
@@ -47,7 +49,8 @@ export class GeneratorError extends Error {
   }
 }
 
-function toGeneratorError(error: unknown): GeneratorError {
+export function toGeneratorError(error: unknown): GeneratorError {
+  if (error instanceof GeneratorError) return error
   if (error instanceof FirebaseError) {
     const details = (error as FirebaseError & { details?: { reason?: string; action?: string } }).details
     if (details?.reason) return new GeneratorError(error.message, details.action, details.reason)
@@ -58,12 +61,7 @@ function toGeneratorError(error: unknown): GeneratorError {
           'In ein paar Minuten unter „Meine Jagden“ nachsehen – die Jagd wird im Hintergrund fertiggestellt.',
         )
       case 'functions/unauthenticated':
-      case 'auth/admin-restricted-operation':
-      case 'auth/operation-not-allowed':
-        return new GeneratorError(
-          'Die Anmeldung hat nicht geklappt.',
-          'In der Firebase-Konsole unter Authentication → Sign-in method die anonyme Anmeldung aktivieren.',
-        )
+        return new GeneratorError('Bitte zuerst anmelden.', 'Oben rechts auf 👤 tippen.')
       case 'auth/network-request-failed':
       case 'functions/unavailable':
         return new GeneratorError('Keine Verbindung zum Server.', 'Internetverbindung prüfen und erneut versuchen.')
@@ -91,7 +89,6 @@ function toGeneratorError(error: unknown): GeneratorError {
 
 export async function generateHunt(params: HuntParams): Promise<string> {
   try {
-    await ensureSignedIn()
     // Claude braucht für Story und Rätsel ein bis drei Minuten
     const call = httpsCallable<HuntParams, { huntId: string }>(functions, 'generateHunt', { timeout: 540_000 })
     const result = await call(params)
@@ -101,9 +98,9 @@ export async function generateHunt(params: HuntParams): Promise<string> {
   }
 }
 
+/** Lädt eine Jagd per ID – auch ohne Konto, damit Mitspieler nur den Link brauchen */
 export async function loadHunt(id: string): Promise<GeneratedHunt | null> {
   try {
-    await ensureSignedIn()
     const snap = await getDoc(doc(db, 'hunts', id))
     return snap.exists() ? (snap.data() as GeneratedHunt) : null
   } catch (error) {
@@ -111,10 +108,11 @@ export async function loadHunt(id: string): Promise<GeneratedHunt | null> {
   }
 }
 
-/** Alle Jagden, die auf diesem Gerät erzeugt wurden (anonyme Anmeldung gilt pro Gerät) */
+/** Alle Jagden des angemeldeten Kontos */
 export async function loadMyHunts(): Promise<GeneratedHunt[]> {
   try {
-    const uid = await ensureSignedIn()
+    const uid = auth.currentUser?.uid
+    if (!uid || auth.currentUser?.isAnonymous) return []
     const snap = await getDocs(query(collection(db, 'hunts'), where('ownerUid', '==', uid)))
     return snap.docs.map((d) => d.data() as GeneratedHunt).sort((a, b) => b.createdAt - a.createdAt)
   } catch (error) {
