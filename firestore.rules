@@ -2,14 +2,20 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Jagden schreibt nur die Cloud Function (Admin-SDK umgeht diese Regeln).
-    // Lesen: jede angemeldete Person per Link; auflisten nur die eigenen.
+    // Lesen per Link ohne Konto (die ID ist nicht zu erraten); auflisten nur die eigenen.
     match /hunts/{huntId} {
-      allow get: if request.auth != null;
+      allow get: if true;
       allow list: if request.auth != null && resource.data.ownerUid == request.auth.uid;
       allow write: if false;
     }
 
-    // Kontingentzähler – nur für die Cloud Function
+    // Gästeliste, Admins und Kontingentzähler – nur für Cloud Functions
+    match /allowlist/{email} {
+      allow read, write: if false;
+    }
+    match /admins/{uid} {
+      allow read, write: if false;
+    }
     match /usage/{docId} {
       allow read, write: if false;
     }

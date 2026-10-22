@@ -26,6 +26,8 @@ export const demoHunt: Hunt = {
         answer: { type: 'number', solution: 7 },
         hints: ['Rechne rückwärts: Was ist 17 + 4?', '21 geteilt durch 3 …'],
       },
+      transition:
+        'Richtig gerechnet, Steuerleute! Im Logbuch erscheint eine neue Zeichnung – sie zeigt den Weg zur nächsten Wegmarke.',
     },
     {
       id: 's2',
@@ -38,6 +40,7 @@ export const demoHunt: Hunt = {
         answer: { type: 'choice', options: ['Ein Schwamm', 'Ein Handtuch', 'Die Sonne', 'Ein Segel'], solution: 1 },
         hints: ['Du benutzt es meistens nach dem Duschen.', 'Es trocknet nicht sich selbst, sondern etwas anderes.'],
       },
+      transition: 'Um die Ecke gedacht – genau wie Mara! Ihr Zettel faltet sich auf und verrät die letzte Wegmarke.',
     },
     {
       id: 's3',
@@ -50,6 +53,7 @@ export const demoHunt: Hunt = {
         answer: { type: 'text', solutions: ['Karte', 'Landkarte', 'Schatzkarte', 'Stadtplan'] },
         hints: ['Ihr schaut gerade ziemlich oft auf mich.', 'Ich bestehe aus Papier – oder heute aus Pixeln.'],
       },
+      transition: 'Die Karte! Ein leises Klicken – Maras Truhe öffnet sich …',
     },
   ],
 }

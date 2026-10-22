@@ -7,11 +7,15 @@ export interface LatLng {
 }
 
 /** Eckdaten, die der Spielleiter im Formular angibt (Spiegel von src/game/generator.ts im Frontend) */
+const latLngSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+})
+
 export const huntParamsSchema = z.object({
-  start: z.object({
-    lat: z.number().min(-90).max(90),
-    lng: z.number().min(-180).max(180),
-  }),
+  start: latLngSchema,
+  /** Vom Ersteller gewählter Zielpunkt; fehlt er, wählt der Generator einen Ort nahe am Start */
+  goal: latLngSchema.optional(),
   durationMinutes: z.number().int().min(20).max(240),
   difficulty: z.enum(['leicht', 'mittel', 'schwer']),
   /** Alter des jüngsten Mitspielers */
@@ -56,6 +60,8 @@ export interface Station {
   position: LatLng
   chapter: string
   riddle: Riddle
+  /** Bestätigung nach gelöstem Rätsel mit Überleitung zur nächsten Station */
+  transition: string
   kindLabel: string
   osmId: string
 }

@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, signInAnonymously } from 'firebase/auth'
+import { getAuth } from 'firebase/auth'
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore'
 import { getFunctions } from 'firebase/functions'
 
@@ -19,16 +19,10 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
+// Bestätigungs- und Passwort-E-Mails auf Deutsch
+auth.languageCode = 'de'
 // Lokaler Cache: Eine einmal geladene Jagd lässt sich auch bei schlechtem Empfang wieder öffnen
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 })
 export const functions = getFunctions(app, 'europe-west3')
-
-/** Meldet anonym an, falls noch niemand angemeldet ist; liefert die Nutzer-ID */
-export async function ensureSignedIn(): Promise<string> {
-  await auth.authStateReady()
-  if (auth.currentUser) return auth.currentUser.uid
-  const { user } = await signInAnonymously(auth)
-  return user.uid
-}

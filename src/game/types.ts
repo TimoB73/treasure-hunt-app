@@ -14,6 +14,8 @@ export interface Station {
   /** Zwischenkapitel, das bei Ankunft erscheint */
   chapter: string
   riddle: Riddle
+  /** Bestätigung nach gelöstem Rätsel mit Überleitung zur nächsten Station (fehlt bei älteren Jagden) */
+  transition?: string
 }
 
 export interface Hunt {

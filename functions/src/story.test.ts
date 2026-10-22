@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateStory, type StationFacts, type StoryOutput } from './story.js'
+import { maxChoiceRiddles, validateStory, type StationFacts, type StoryOutput } from './story.js'
 
 const facts: StationFacts[] = [
   { stationNumber: 1, isGoal: false, kind: 'Brunnen', name: 'Marktbrunnen', osm: { name: 'Marktbrunnen', start_date: '1873' }, wikipedia: null },
@@ -25,8 +25,8 @@ const story = (r1: Partial<Riddle>, r2: Partial<Riddle> = {}): StoryOutput => ({
   intro: 'Intro',
   outro: 'Outro',
   stations: [
-    { stationNumber: 1, chapter: 'Kapitel 1', riddle: riddle(r1) },
-    { stationNumber: 2, chapter: 'Kapitel 2', riddle: riddle(r2) },
+    { stationNumber: 1, chapter: 'Kapitel 1', riddle: riddle(r1), transition: 'Richtig! Weiter geht es.' },
+    { stationNumber: 2, chapter: 'Kapitel 2', riddle: riddle(r2), transition: 'Auf zum Finale!' },
   ],
 })
 
@@ -66,5 +66,21 @@ describe('validateStory', () => {
     expect(validateStory(story({ numberSolution: 1875, factSource: 'osm', factQuote: '1873' }), facts)[0]).toMatch(/nicht belegt/)
     // Wikipedia-Zitat bei einer Station ohne Wikipedia
     expect(validateStory(story({ factSource: 'wikipedia', factQuote: 'Der Stadtpark' }), facts)[0]).toMatch(/wörtliches Zitat/)
+  })
+
+  it('verlangt einen Übergangstext', () => {
+    const s = story({})
+    s.stations[0].transition = ' '
+    expect(validateStory(s, facts)[0]).toMatch(/transition/)
+  })
+
+  it('begrenzt Multiple Choice bei mittel und schwer', () => {
+    const choice = { answerType: 'choice' as const, numberSolution: null, options: ['a', 'b', 'c'], choiceSolution: 0 }
+    const both = story(choice, choice)
+    expect(validateStory(both, facts, 'leicht')).toEqual([])
+    expect(validateStory(both, facts, 'mittel')[0]).toMatch(/höchstens 1 Multiple-Choice/)
+    expect(validateStory(story(choice), facts, 'schwer')).toEqual([])
+    expect(maxChoiceRiddles('mittel', 6)).toBe(3)
+    expect(maxChoiceRiddles('schwer', 6)).toBe(1)
   })
 })
