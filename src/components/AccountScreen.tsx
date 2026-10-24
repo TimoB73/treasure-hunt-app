@@ -44,6 +44,8 @@ function LoginForm() {
   const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordRepeat, setPasswordRepeat] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const { busy, error, run } = useAction()
 
@@ -54,6 +56,9 @@ function LoginForm() {
       if (mode === 'login') await signIn(email, password)
       if (mode === 'register') {
         if (password.length < 8) throw new GeneratorError('Das Passwort ist zu kurz.', 'Mindestens 8 Zeichen verwenden.')
+        if (password !== passwordRepeat) {
+          throw new GeneratorError('Die beiden Passwörter stimmen nicht überein.', 'Bitte beide Felder gleich ausfüllen.')
+        }
         await signUp(email, password)
       }
       if (mode === 'reset') {
@@ -105,16 +110,46 @@ function LoginForm() {
         {mode !== 'reset' && (
           <label className="grid gap-1">
             <span className="text-sm font-medium">Passwort</span>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+                autoCapitalize="none"
+                autoCorrect="off"
+                required
+                minLength={mode === 'register' ? 8 : undefined}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={`${inputClass} w-full pr-24`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-pressed={showPassword}
+                className="absolute inset-y-0 right-0 px-3 text-sm text-stone-500"
+              >
+                {showPassword ? '🙈 Verbergen' : '👁️ Zeigen'}
+              </button>
+            </div>
+            {mode === 'register' && <span className="text-xs text-stone-500">mindestens 8 Zeichen</span>}
+          </label>
+        )}
+        {mode === 'register' && (
+          <label className="grid gap-1">
+            <span className="text-sm font-medium">Passwort wiederholen</span>
             <input
-              type="password"
-              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="new-password"
+              autoCapitalize="none"
+              autoCorrect="off"
               required
-              minLength={mode === 'register' ? 8 : undefined}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              value={passwordRepeat}
+              onChange={(e) => setPasswordRepeat(e.target.value)}
               className={inputClass}
             />
-            {mode === 'register' && <span className="text-xs text-stone-500">mindestens 8 Zeichen</span>}
+            {passwordRepeat && passwordRepeat !== password && (
+              <span className="text-xs text-red-600">Stimmt noch nicht mit dem Passwort überein.</span>
+            )}
           </label>
         )}
         <PrimaryButton type="submit" disabled={busy}>
