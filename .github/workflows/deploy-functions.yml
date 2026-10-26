@@ -1,0 +1,54 @@
+# Deployt Cloud Functions und Firestore-Regeln automatisch nach jedem Merge in main.
+# Die App selbst baut Vercel; dieser Ablauf kümmert sich nur um den Server-Teil.
+# Anmeldung bei Google ohne Schlüssel über Workload Identity Federation
+# (einmalig eingerichtet mit scripts/setup-github-deploy.sh).
+name: Cloud Functions deployen
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'functions/**'
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'firebase.json'
+      - '.github/workflows/deploy-functions.yml'
+  # Knopf „Run workflow“ auf GitHub, z. B. zum erneuten Versuch vom Handy aus
+  workflow_dispatch:
+
+# Nie zwei Deploys gleichzeitig – Google lehnt das ab („unable to queue the operation“)
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Abhängigkeiten installieren
+        run: npm ci --prefix functions
+
+      - name: Tests
+        run: npm test --prefix functions
+
+      - name: Bei Google anmelden
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/21635380668/locations/global/workloadIdentityPools/github/providers/github
+          service_account: github-deploy@schatzsuche-d5d97.iam.gserviceaccount.com
+
+      - name: Deployen
+        run: npx --yes firebase-tools@15 deploy --only functions,firestore --project schatzsuche-d5d97 --non-interactive --force
