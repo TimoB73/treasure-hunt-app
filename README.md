@@ -65,6 +65,14 @@ firebase deploy --only functions                # baut functions/ und deployt ge
 firebase functions:log --only generateHunt      # Logs ansehen
 ```
 
+### Automatisch per GitHub Actions
+
+Nach jedem Merge in `main`, der `functions/`, `firestore.rules` oder `firebase.json` ändert, testet und deployt `.github/workflows/deploy-functions.yml` den Server-Teil automatisch. Erneut auslösen: GitHub → Actions → „Cloud Functions deployen“ → „Run workflow“.
+
+Die Anmeldung bei Google läuft ohne Schlüssel über Workload Identity Federation (nur dieses Repo, nur `main`). Einmalig einrichten in der Cloud Shell: `bash scripts/setup-github-deploy.sh`.
+
+Falls eine **neu angelegte** Function danach nicht aufrufbar ist („Generator nicht erreichbar“), fehlt die Aufruf-Erlaubnis: `gcloud functions add-invoker-policy-binding NAME --region=europe-west3 --member=allUsers`.
+
 Schlüssel tauschen: `firebase functions:secrets:set ANTHROPIC_API_KEY`, danach erneut `firebase deploy --only functions`.
 
 ## Spielablauf (Prototyp)
