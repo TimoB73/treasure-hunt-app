@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildOverpassQuery, extractPois, thinOut, type OverpassResult } from './poi.js'
+import { OVERPASS_ENDPOINTS, buildOverpassQuery, extractPois, fetchOverpass, thinOut, type OverpassResult } from './poi.js'
 
 const road = {
   type: 'way' as const,
@@ -65,5 +65,35 @@ describe('thinOut', () => {
       10,
     )
     expect(kept.map((p) => p.osmId)).toEqual(['b', 'c'])
+  })
+})
+
+describe('fetchOverpass', () => {
+  const ok = (body: object) => new Response(JSON.stringify(body), { status: 200 })
+
+  it('weicht bei Fehlern und Zeitüberschreitung auf den nächsten Server aus', async () => {
+    const calls: string[] = []
+    const fake = (async (url: string) => {
+      calls.push(url)
+      if (calls.length === 1) return new Response('busy', { status: 504 })
+      if (calls.length === 2) throw Object.assign(new Error('timeout'), { name: 'TimeoutError' })
+      return ok({ elements: [{ type: 'node', id: 1 }] })
+    }) as unknown as typeof fetch
+    const result = await fetchOverpass('q', fake)
+    expect(result.elements).toHaveLength(1)
+    expect(calls).toEqual(OVERPASS_ENDPOINTS.slice(0, 3))
+  })
+
+  it('wertet eine abgebrochene Abfrage mit Hinweis als Fehler', async () => {
+    let n = 0
+    const fake = (async () =>
+      ++n === 1 ? ok({ elements: [], remark: 'runtime error: Query timed out' }) : ok({ elements: [] })) as unknown as typeof fetch
+    await fetchOverpass('q', fake)
+    expect(n).toBe(2)
+  })
+
+  it('meldet verständlich, wenn alle Server ausfallen', async () => {
+    const fake = (async () => new Response('', { status: 503 })) as unknown as typeof fetch
+    await expect(fetchOverpass('q', fake)).rejects.toThrow(/alle Server/)
   })
 })
