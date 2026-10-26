@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { GeneratorError, generateHunt, type HuntParams } from '../game/generator'
+import { GeneratorError, generateHunt, type HuntParams, type ProgressStep } from '../game/generator'
 import { GENRES } from '../game/genres'
 import { useWakeLock } from '../hooks/useWakeLock'
 import type { LatLng } from '../lib/geo'
@@ -25,13 +25,17 @@ const DEFAULTS: Settings = {
   genre: 'beliebig',
 }
 
-/** Grobe Fortschrittsanzeige – die Cloud Function meldet keine Zwischenstände */
-const STEPS = [
-  { after: 0, text: 'Suche geeignete Orte in der Umgebung …' },
-  { after: 8, text: 'Berechne Wege zwischen den Orten …' },
-  { after: 16, text: 'Claude schreibt Geschichte und Rätsel … (dauert 2–4 Minuten)' },
-  { after: 180, text: 'Gleich fertig – die letzten Rätsel werden geprüft …' },
-]
+/** Texte zu den Schritten, die die Cloud Function tatsächlich meldet */
+const STEP_TEXT: Record<ProgressStep | 'start', string> = {
+  start: 'Starte …',
+  places: 'Suche geeignete Orte in der Umgebung …',
+  places_fallback: 'Die Ortsdatenbank ist gerade langsam – frage Ersatzserver an (kann 1–2 Minuten dauern) …',
+  route: 'Berechne Wege zwischen den Orten …',
+  facts: 'Sammle Fakten zu den Orten …',
+  story: 'Claude schreibt Geschichte und Rätsel … (dauert 2–4 Minuten)',
+  story_retry: 'Claude überarbeitet einige Rätsel …',
+  saving: 'Speichere die Jagd …',
+}
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
@@ -110,6 +114,7 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
   const [settings, setSettings] = useState<Settings>(DEFAULTS)
   const [running, setRunning] = useState(false)
   const [elapsed, setElapsed] = useState(0)
+  const [step, setStep] = useState<ProgressStep | 'start'>('start')
   const [error, setError] = useState<GeneratorError | null>(null)
   useWakeLock(running)
 
@@ -152,9 +157,10 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
     if (!start || !ready) return
     setRunning(true)
     setElapsed(0)
+    setStep('start')
     setError(null)
     try {
-      onCreated(await generateHunt({ ...settings, start, ...(customGoal && goal ? { goal } : {}) }))
+      onCreated(await generateHunt({ ...settings, start, ...(customGoal && goal ? { goal } : {}) }, setStep))
     } catch (e) {
       setError(e instanceof GeneratorError ? e : new GeneratorError(String(e)))
     } finally {
@@ -163,12 +169,11 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
   }
 
   if (running) {
-    const step = [...STEPS].reverse().find((s) => elapsed >= s.after)!
     return (
       <Card title="Jagd wird erzeugt">
         <div className="flex items-center gap-3">
           <span className="inline-block h-6 w-6 shrink-0 animate-spin rounded-full border-4 border-brand-600 border-t-transparent" />
-          <p>{step.text}</p>
+          <p>{STEP_TEXT[step]}</p>
         </div>
         <p className="mt-3 text-sm text-stone-500">
           {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')} min · Bitte die App geöffnet lassen. Falls die

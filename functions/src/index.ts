@@ -33,6 +33,24 @@ const orsKey = defineSecret('OPENROUTESERVICE_API_KEY')
 const MAX_HUNTS_PER_DAY = 30
 /** Höchstens so viele Kandidaten gehen in die Distanzmatrix (OpenRouteService erlaubt 3500 Zellen) */
 const MAX_CANDIDATES = 40
+
+/** Schritte, die die App während des Erzeugens anzeigt (Dokument jobs/{jobId}) */
+type ProgressStep = 'places' | 'places_fallback' | 'route' | 'facts' | 'story' | 'story_retry' | 'saving'
+type Report = (step: ProgressStep) => void
+
+/** Schreibt den aktuellen Schritt nach jobs/{jobId}; Fehler dabei dürfen das Erzeugen nie stören */
+function progressReporter(jobId: string | undefined, uid: string): { report: Report; cleanup: () => Promise<void> } {
+  if (!jobId) return { report: () => undefined, cleanup: async () => undefined }
+  const ref = getFirestore().collection('jobs').doc(jobId)
+  return {
+    report: (step) => {
+      ref.set({ uid, step, updatedAt: Date.now() }).catch(() => undefined)
+    },
+    cleanup: () => ref.delete().then(() => undefined, () => undefined),
+  }
+}
+
+const jobIdSchema = z.object({ jobId: z.string().regex(/^[A-Za-z0-9-]{10,64}$/).optional() })
 const GEOFENCE_RADIUS_M = 30
 
 /** Wandelt UserFacingError in eine HttpsError mit reason/action fürs Frontend um */
@@ -170,6 +188,7 @@ export const generateHunt = onCall(
   { secrets: [anthropicKey, orsKey], timeoutSeconds: 540, memory: '512MiB' },
   async (request) => {
     let reserved: Caller | null = null
+    let progress: ReturnType<typeof progressReporter> | null = null
     try {
       const caller = await getCaller(request)
       assertCanCreate(caller)
@@ -188,10 +207,15 @@ export const generateHunt = onCall(
 
       await reserveQuota(caller, 1)
       reserved = caller
-      const hunt = await buildHunt(parsed.data, caller.uid, keys)
+      const jobId = jobIdSchema.safeParse(request.data).data?.jobId
+      progress = progressReporter(jobId, caller.uid)
+      const hunt = await buildHunt(parsed.data, caller.uid, keys, progress.report)
+      progress.report('saving')
       await getFirestore().collection('hunts').doc(hunt.id).set(hunt)
+      await progress.cleanup()
       return { huntId: hunt.id }
     } catch (error) {
+      await progress?.cleanup()
       // Fehlgeschlagene Versuche zählen nicht gegen das Kontingent
       if (reserved) await reserveQuota(reserved, -1).catch(() => undefined)
       throw toHttpsError(error, 'generateHunt')
@@ -228,8 +252,14 @@ async function reserveQuota(caller: Caller, delta: 1 | -1): Promise<void> {
   })
 }
 
-async function buildHunt(params: HuntParams, uid: string, keys: { anthropic: string; ors: string }): Promise<HuntDoc> {
+async function buildHunt(
+  params: HuntParams,
+  uid: string,
+  keys: { anthropic: string; ors: string },
+  report: Report,
+): Promise<HuntDoc> {
   const budget = planBudget(params)
+  report('places')
 
   // 0. Bei vorgegebenem Ziel zuerst prüfen, ob die Strecke in der Dauer überhaupt schaffbar ist
   if (params.goal) {
@@ -248,10 +278,11 @@ async function buildHunt(params: HuntParams, uid: string, keys: { anthropic: str
 
   // 1. Orte suchen; bei zu wenigen Treffern den Suchradius einmal vergrößern
   const area = searchArea(params, budget)
-  let result = await fetchOverpass(buildOverpassQuery(area.center, area.radius))
+  const overpassOptions = { onFallback: () => report('places_fallback') }
+  let result = await fetchOverpass(buildOverpassQuery(area.center, area.radius), overpassOptions)
   let pois = extractPois(result, params)
   if (pois.length < params.stationCount * 2) {
-    result = await fetchOverpass(buildOverpassQuery(area.center, area.radius * 1.6))
+    result = await fetchOverpass(buildOverpassQuery(area.center, area.radius * 1.6), overpassOptions)
     pois = extractPois(result, params)
   }
   if (params.goal && isNearMajorRoad(result, params.goal, params)) {
@@ -283,6 +314,7 @@ async function buildHunt(params: HuntParams, uid: string, keys: { anthropic: str
   }
 
   // 2. Echte Weglängen und Routenauswahl
+  report('route')
   const matrix = await fetchDistanceMatrix([params.start, ...candidates.map((c) => c.position)], params.mode, keys.ors)
   const id = getFirestore().collection('hunts').doc().id
   const seed = [...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7)
@@ -292,6 +324,7 @@ async function buildHunt(params: HuntParams, uid: string, keys: { anthropic: str
   const chosen = [...plan.loop, plan.goal].map((i) => candidates[i])
 
   // 3. Belegte Fakten sammeln
+  report('facts')
   const wikipedia = await Promise.all(chosen.map((p) => fetchWikipediaExtract(p.tags.wikipedia)))
   const facts: StationFacts[] = chosen.map((p, i) => ({
     stationNumber: i + 1,
@@ -303,7 +336,8 @@ async function buildHunt(params: HuntParams, uid: string, keys: { anthropic: str
   }))
 
   // 4. Story und Rätsel (einmal pro Jagd)
-  const story = await generateStory(params, facts, keys.anthropic)
+  report('story')
+  const story = await generateStory(params, facts, keys.anthropic, () => report('story_retry'))
 
   const routeMeters = Math.round(plan.groupMeters.reduce((a, b) => a + b, 0) / plan.groupMeters.length)
   return {

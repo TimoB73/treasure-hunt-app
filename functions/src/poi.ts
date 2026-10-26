@@ -12,8 +12,17 @@ export const OVERPASS_ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
-/** Wartezeit je Server – lieber früh zum nächsten wechseln als lange hängen */
-const OVERPASS_TIMEOUT_MS = 25_000
+export interface OverpassOptions {
+  fetchImpl?: typeof fetch
+  /** Abstand, mit dem der jeweils nächste Server zusätzlich gefragt wird */
+  staggerMs?: number
+  /** Höchste Wartezeit je Anfrage – Spiegelserver sind oft langsam, aber zuverlässig */
+  timeoutMs?: number
+  /** Pause vor dem zweiten Durchgang, falls alle Server versagen */
+  retryDelayMs?: number
+  /** Wird aufgerufen, sobald auf Ersatzserver ausgewichen werden muss (für die Fortschrittsanzeige) */
+  onFallback?: () => void
+}
 const USER_AGENT = 'Schatzsuche-App/0.2 (Cloud Function; https://github.com/timob73/treasure-hunt-app)'
 
 interface Category {
@@ -67,7 +76,7 @@ export const FACT_TAGS = [
 export function buildOverpassQuery(center: LatLng, radius: number): string {
   const around = `(around:${Math.round(radius)},${center.lat.toFixed(6)},${center.lng.toFixed(6)})`
   const pois = CATEGORIES.map((c) => `  nwr${around}${c.filter};`).join('\n')
-  return `[out:json][timeout:20];
+  return `[out:json][timeout:40];
 (
 ${pois}
 );
@@ -93,35 +102,97 @@ export interface OverpassResult {
   remark?: string
 }
 
-export async function fetchOverpass(query: string, fetchImpl: typeof fetch = fetch): Promise<OverpassResult> {
+/**
+ * Fragt die Overpass-Server zeitversetzt parallel ab und nimmt die erste brauchbare Antwort.
+ * Liefert kein Server, folgt nach kurzer Pause ein zweiter Durchgang.
+ */
+export async function fetchOverpass(query: string, options: OverpassOptions = {}): Promise<OverpassResult> {
+  const { fetchImpl = fetch, staggerMs = 4_000, timeoutMs = 50_000, retryDelayMs = 10_000, onFallback } = options
   const failures: string[] = []
-  for (const endpoint of OVERPASS_ENDPOINTS) {
+  let fellBack = false
+  const fallback = () => {
+    if (!fellBack) onFallback?.()
+    fellBack = true
+  }
+
+  const ask = async (endpoint: string, signal: AbortSignal): Promise<OverpassResult | null> => {
     const host = new URL(endpoint).host
     try {
       const res = await fetchImpl(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT },
         body: new URLSearchParams({ data: query }),
-        signal: AbortSignal.timeout(OVERPASS_TIMEOUT_MS),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
       })
-      if (res.ok) {
-        const data = (await res.json()) as OverpassResult
-        // Überlastete Server antworten manchmal mit 200, aber ohne Daten und mit Hinweis in "remark"
-        if (Array.isArray(data.elements) && !data.remark?.includes('runtime error')) return data
-        failures.push(`${host}: ${data.remark ?? 'leere Antwort'}`)
-      } else {
+      if (!res.ok) {
         failures.push(`${host}: HTTP ${res.status}`)
+        return null
       }
+      const data = (await res.json()) as OverpassResult
+      // Überlastete Server antworten manchmal mit 200, aber mit abgebrochener Abfrage
+      if (Array.isArray(data.elements) && !data.remark?.includes('runtime error')) return data
+      failures.push(`${host}: ${data.remark ?? 'leere Antwort'}`)
     } catch (e) {
+      if (signal.aborted) return null // ein anderer Server war schneller
       failures.push(`${host}: ${e instanceof Error && e.name === 'TimeoutError' ? 'keine Antwort' : String(e)}`)
     }
-    console.warn('Overpass-Server nicht nutzbar, versuche den nächsten', failures[failures.length - 1])
+    return null
   }
+
+  /** Ein Durchgang: Server nacheinander hinzunehmen; die erste gute Antwort gewinnt */
+  const round = () =>
+    new Promise<OverpassResult | null>((resolve) => {
+      const controller = new AbortController()
+      const timers: ReturnType<typeof setTimeout>[] = []
+      let pending = OVERPASS_ENDPOINTS.length
+      let done = false
+      const startAt: (() => void)[] = []
+      const finish = (result: OverpassResult | null) => {
+        if (done) return
+        done = true
+        timers.forEach(clearTimeout)
+        controller.abort()
+        resolve(result)
+      }
+      OVERPASS_ENDPOINTS.forEach((endpoint, i) => {
+        const start = () => {
+          if (done) return
+          if (i > 0) fallback()
+          ask(endpoint, controller.signal).then((result) => {
+            if (result) finish(result)
+            else {
+              // Fällt ein Server aus, sofort den nächsten zuschalten statt auf den Takt zu warten
+              const next = timers[i + 1]
+              if (next !== undefined) {
+                clearTimeout(next)
+                startAt[i + 1]()
+              }
+              if (--pending === 0) finish(null)
+            }
+          })
+        }
+        startAt[i] = () => {
+          startAt[i] = () => undefined
+          start()
+        }
+        timers[i] = setTimeout(() => startAt[i](), i * staggerMs)
+      })
+    })
+
+  const first = await round()
+  if (first) return first
+  console.warn('Overpass: erster Durchgang ohne Ergebnis', failures)
+  fallback()
+  await new Promise((r) => setTimeout(r, retryDelayMs))
+  failures.length = 0
+  const second = await round()
+  if (second) return second
+
   throw new UserFacingError(
     'unavailable',
     'overpass_unavailable',
-    'Die Ortsdatenbank (OpenStreetMap/Overpass) ist gerade überlastet – alle Server haben nicht rechtzeitig geantwortet.',
-    `In 10–15 Minuten erneut versuchen. Das liegt nicht an deinen Eingaben. (${failures.join('; ')})`,
+    'Die Ortsdatenbank (OpenStreetMap/Overpass) ist gerade überlastet – auch nach zwei Durchgängen hat kein Server geantwortet.',
+    `In 15–30 Minuten erneut versuchen. Das liegt nicht an deinen Eingaben. (${failures.join('; ')})`,
   )
 }
 
