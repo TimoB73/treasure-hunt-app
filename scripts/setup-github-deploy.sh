@@ -21,6 +21,19 @@ if ! gcloud iam service-accounts describe "$SA" --project "$PROJECT" >/dev/null 
   gcloud iam service-accounts create "$SA_NAME" --project "$PROJECT" --display-name "GitHub Deploy (Cloud Functions)"
 fi
 
+# Ein neues Dienstkonto ist bei Google erst nach einigen Sekunden überall bekannt – daher bis zu 5× versuchen
+grant() {
+  for attempt in 1 2 3 4 5; do
+    if gcloud projects add-iam-policy-binding "$PROJECT" \
+      --member "serviceAccount:$SA" --role "$1" --condition=None --quiet >/dev/null 2>&1; then
+      return 0
+    fi
+    echo "   … Dienstkonto noch nicht bereit, warte 15 Sekunden (Versuch $attempt/5)"
+    sleep 15
+  done
+  gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$SA" --role "$1" --condition=None --quiet >/dev/null
+}
+
 echo "3/5 Rechte zum Deployen vergeben …"
 for role in \
   roles/firebase.admin \
@@ -31,8 +44,7 @@ for role in \
   roles/secretmanager.admin \
   roles/serviceusage.serviceUsageConsumer \
   roles/cloudbuild.builds.editor; do
-  gcloud projects add-iam-policy-binding "$PROJECT" \
-    --member "serviceAccount:$SA" --role "$role" --condition=None --quiet >/dev/null
+  grant "$role"
   echo "   ✔ $role"
 done
 
