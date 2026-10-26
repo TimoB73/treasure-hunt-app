@@ -9,6 +9,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Fortschritt beim Erzeugen – nur für die Person, die die Jagd erzeugt.
+    // Vor dem ersten Schritt existiert das Dokument noch nicht (resource == null).
+    match /jobs/{jobId} {
+      allow get: if request.auth != null && (resource == null || resource.data.uid == request.auth.uid);
+      allow list, write: if false;
+    }
+
     // Gästeliste, Admins und Kontingentzähler – nur für Cloud Functions
     match /allowlist/{email} {
       allow read, write: if false;

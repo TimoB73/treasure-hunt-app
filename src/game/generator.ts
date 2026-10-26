@@ -1,5 +1,5 @@
 import { FirebaseError } from 'firebase/app'
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '../lib/firebase'
 import type { LatLng } from '../lib/geo'
@@ -87,14 +87,33 @@ export function toGeneratorError(error: unknown): GeneratorError {
   return new GeneratorError(String(error))
 }
 
-export async function generateHunt(params: HuntParams): Promise<string> {
+/** Schritte, die die Cloud Function beim Erzeugen meldet (Spiegel von functions/src/index.ts) */
+export type ProgressStep = 'places' | 'places_fallback' | 'route' | 'facts' | 'story' | 'story_retry' | 'saving'
+
+export async function generateHunt(params: HuntParams, onStep?: (step: ProgressStep) => void): Promise<string> {
+  // Über diese zufällige ID meldet der Server den aktuellen Schritt in jobs/{jobId}
+  const jobId = crypto.randomUUID()
+  const unsubscribe = onStep
+    ? onSnapshot(
+        doc(db, 'jobs', jobId),
+        (snap) => {
+          const step = snap.get('step') as ProgressStep | undefined
+          if (step) onStep(step)
+        },
+        () => undefined, // Fortschritt ist nur Anzeige – Fehler hier ignorieren
+      )
+    : () => undefined
   try {
-    // Claude braucht für Story und Rätsel ein bis drei Minuten
-    const call = httpsCallable<HuntParams, { huntId: string }>(functions, 'generateHunt', { timeout: 540_000 })
-    const result = await call(params)
+    // Claude braucht für Story und Rätsel zwei bis vier Minuten
+    const call = httpsCallable<HuntParams & { jobId: string }, { huntId: string }>(functions, 'generateHunt', {
+      timeout: 540_000,
+    })
+    const result = await call({ ...params, jobId })
     return result.data.huntId
   } catch (error) {
     throw toGeneratorError(error)
+  } finally {
+    unsubscribe()
   }
 }
 

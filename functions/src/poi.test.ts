@@ -70,30 +70,50 @@ describe('thinOut', () => {
 
 describe('fetchOverpass', () => {
   const ok = (body: object) => new Response(JSON.stringify(body), { status: 200 })
+  const fast = { staggerMs: 0, timeoutMs: 200, retryDelayMs: 0 }
 
-  it('weicht bei Fehlern und Zeitüberschreitung auf den nächsten Server aus', async () => {
+  it('nimmt die erste brauchbare Antwort, auch wenn der Hauptserver ausfällt', async () => {
+    const fake = (async (url: string) => {
+      if (url.includes('overpass-api.de')) return new Response('bad gateway', { status: 502 })
+      if (url.includes('private.coffee')) return ok({ elements: [{ type: 'node', id: 2 }] })
+      return new Promise<Response>(() => undefined) // hängt
+    }) as unknown as typeof fetch
+    let fellBack = false
+    const result = await fetchOverpass('q', { ...fast, fetchImpl: fake, onFallback: () => (fellBack = true) })
+    expect(result.elements[0].id).toBe(2)
+    expect(fellBack).toBe(true)
+  })
+
+  it('schaltet beim Ausfall sofort den nächsten Server zu, ohne den Takt abzuwarten', async () => {
     const calls: string[] = []
     const fake = (async (url: string) => {
       calls.push(url)
-      if (calls.length === 1) return new Response('busy', { status: 504 })
-      if (calls.length === 2) throw Object.assign(new Error('timeout'), { name: 'TimeoutError' })
-      return ok({ elements: [{ type: 'node', id: 1 }] })
+      return calls.length === 1 ? new Response('', { status: 502 }) : ok({ elements: [] })
     }) as unknown as typeof fetch
-    const result = await fetchOverpass('q', fake)
-    expect(result.elements).toHaveLength(1)
-    expect(calls).toEqual(OVERPASS_ENDPOINTS.slice(0, 3))
+    const started = Date.now()
+    await fetchOverpass('q', { ...fast, staggerMs: 10_000, fetchImpl: fake })
+    expect(Date.now() - started).toBeLessThan(1000)
+    expect(calls).toEqual(OVERPASS_ENDPOINTS.slice(0, 2))
   })
 
   it('wertet eine abgebrochene Abfrage mit Hinweis als Fehler', async () => {
-    let n = 0
-    const fake = (async () =>
-      ++n === 1 ? ok({ elements: [], remark: 'runtime error: Query timed out' }) : ok({ elements: [] })) as unknown as typeof fetch
-    await fetchOverpass('q', fake)
-    expect(n).toBe(2)
+    const fake = (async (url: string) =>
+      url.includes('overpass-api.de')
+        ? ok({ elements: [], remark: 'runtime error: Query timed out' })
+        : ok({ elements: [{ type: 'node', id: 3 }] })) as unknown as typeof fetch
+    const result = await fetchOverpass('q', { ...fast, fetchImpl: fake })
+    expect(result.elements).toHaveLength(1)
   })
 
-  it('meldet verständlich, wenn alle Server ausfallen', async () => {
+  it('versucht es ein zweites Mal, bevor es aufgibt', async () => {
+    let n = 0
+    const fake = (async () => (++n <= OVERPASS_ENDPOINTS.length ? new Response('', { status: 503 }) : ok({ elements: [] }))) as unknown as typeof fetch
+    await fetchOverpass('q', { ...fast, fetchImpl: fake })
+    expect(n).toBe(OVERPASS_ENDPOINTS.length + 1)
+  })
+
+  it('meldet verständlich, wenn alle Server zweimal ausfallen', async () => {
     const fake = (async () => new Response('', { status: 503 })) as unknown as typeof fetch
-    await expect(fetchOverpass('q', fake)).rejects.toThrow(/alle Server/)
+    await expect(fetchOverpass('q', { ...fast, fetchImpl: fake })).rejects.toThrow(/zwei Durchgängen/)
   })
 })

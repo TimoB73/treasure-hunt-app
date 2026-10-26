@@ -212,7 +212,12 @@ function toRiddle(r: StoryOutput['stations'][number]['riddle']): Riddle {
  * Lässt Claude Story, Kapitel und Rätsel schreiben.
  * Ist die Antwort ungültig, wird einmal mit den gefundenen Fehlern nachgefragt.
  */
-export async function generateStory(params: HuntParams, stations: StationFacts[], apiKey: string): Promise<Story> {
+export async function generateStory(
+  params: HuntParams,
+  stations: StationFacts[],
+  apiKey: string,
+  onRetry?: () => void,
+): Promise<Story> {
   const client = new Anthropic({ apiKey, maxRetries: 2 })
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: buildUserPrompt(params, stations) }]
 
@@ -271,6 +276,7 @@ export async function generateStory(params: HuntParams, stations: StationFacts[]
     }
 
     console.warn(`Story-Versuch ${attempt} ungültig:`, problems)
+    if (attempt === 1) onRetry?.()
     if (content.length) messages.push({ role: 'assistant', content })
     messages.push({
       role: 'user',
