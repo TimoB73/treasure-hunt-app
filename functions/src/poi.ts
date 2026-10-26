@@ -2,7 +2,18 @@ import { UserFacingError } from './errors.js'
 import { distanceMeters, distanceToPolyline } from './geo.js'
 import type { HuntParams, LatLng, Poi } from './types.js'
 
-const OVERPASS_ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
+/**
+ * Öffentliche Overpass-Server. Der Hauptserver ist zeitweise überlastet,
+ * daher wird nacheinander auf gleichwertige Spiegelserver ausgewichen.
+ */
+export const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+]
+/** Wartezeit je Server – lieber früh zum nächsten wechseln als lange hängen */
+const OVERPASS_TIMEOUT_MS = 25_000
 const USER_AGENT = 'Schatzsuche-App/0.2 (Cloud Function; https://github.com/timob73/treasure-hunt-app)'
 
 interface Category {
@@ -56,7 +67,7 @@ export const FACT_TAGS = [
 export function buildOverpassQuery(center: LatLng, radius: number): string {
   const around = `(around:${Math.round(radius)},${center.lat.toFixed(6)},${center.lng.toFixed(6)})`
   const pois = CATEGORIES.map((c) => `  nwr${around}${c.filter};`).join('\n')
-  return `[out:json][timeout:25];
+  return `[out:json][timeout:20];
 (
 ${pois}
 );
@@ -78,29 +89,39 @@ interface OverpassElement {
 
 export interface OverpassResult {
   elements: OverpassElement[]
+  /** Hinweis des Servers, z. B. bei Zeitüberschreitung der Abfrage */
+  remark?: string
 }
 
-export async function fetchOverpass(query: string): Promise<OverpassResult> {
-  let lastError = ''
+export async function fetchOverpass(query: string, fetchImpl: typeof fetch = fetch): Promise<OverpassResult> {
+  const failures: string[] = []
   for (const endpoint of OVERPASS_ENDPOINTS) {
+    const host = new URL(endpoint).host
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetchImpl(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT },
         body: new URLSearchParams({ data: query }),
-        signal: AbortSignal.timeout(40_000),
+        signal: AbortSignal.timeout(OVERPASS_TIMEOUT_MS),
       })
-      if (res.ok) return (await res.json()) as OverpassResult
-      lastError = `HTTP ${res.status}`
+      if (res.ok) {
+        const data = (await res.json()) as OverpassResult
+        // Überlastete Server antworten manchmal mit 200, aber ohne Daten und mit Hinweis in "remark"
+        if (Array.isArray(data.elements) && !data.remark?.includes('runtime error')) return data
+        failures.push(`${host}: ${data.remark ?? 'leere Antwort'}`)
+      } else {
+        failures.push(`${host}: HTTP ${res.status}`)
+      }
     } catch (e) {
-      lastError = String(e)
+      failures.push(`${host}: ${e instanceof Error && e.name === 'TimeoutError' ? 'keine Antwort' : String(e)}`)
     }
+    console.warn('Overpass-Server nicht nutzbar, versuche den nächsten', failures[failures.length - 1])
   }
   throw new UserFacingError(
     'unavailable',
     'overpass_unavailable',
-    'Die Ortsdatenbank (OpenStreetMap/Overpass) ist gerade nicht erreichbar.',
-    `In ein paar Minuten erneut versuchen. (${lastError})`,
+    'Die Ortsdatenbank (OpenStreetMap/Overpass) ist gerade überlastet – alle Server haben nicht rechtzeitig geantwortet.',
+    `In 10–15 Minuten erneut versuchen. Das liegt nicht an deinen Eingaben. (${failures.join('; ')})`,
   )
 }
 
