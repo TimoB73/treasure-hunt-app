@@ -2,6 +2,15 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { FunctionsErrorCode } from 'firebase-functions/v2/https'
 
 /**
+ * Vorschlag, wie es trotz Einwand weitergehen kann: Die App zeigt `label` als Knopf
+ * und schickt die Anfrage erneut mit den Feldern aus `patch` (z. B. accept: ['too_long']).
+ */
+export interface RetryOption {
+  label: string
+  patch: Record<string, unknown>
+}
+
+/**
  * Fehler mit verständlicher Meldung für den Spielleiter.
  * `action` sagt, was zu tun ist; `reason` ist eine maschinenlesbare Kennung fürs Frontend.
  */
@@ -11,6 +20,7 @@ export class UserFacingError extends Error {
     readonly reason: string,
     message: string,
     readonly action?: string,
+    readonly retry?: RetryOption,
   ) {
     super(message)
   }

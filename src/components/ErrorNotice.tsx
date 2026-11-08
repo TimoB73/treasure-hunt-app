@@ -1,5 +1,7 @@
-/** Fehlermeldung mit Handlungsanweisung („Was ist zu tun?“) */
-export function ErrorNotice({ title, action }: { title: string; action?: string }) {
+import type { ReactNode } from 'react'
+
+/** Fehlermeldung mit Handlungsanweisung („Was ist zu tun?“) und optionalen Knöpfen */
+export function ErrorNotice({ title, action, children }: { title: string; action?: string; children?: ReactNode }) {
   return (
     <section
       role="alert"
@@ -12,6 +14,7 @@ export function ErrorNotice({ title, action }: { title: string; action?: string 
           {action}
         </p>
       )}
+      {children && <div className="mt-3 grid gap-2">{children}</div>}
     </section>
   )
 }

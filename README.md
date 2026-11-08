@@ -35,13 +35,19 @@ Ablauf der Cloud Function `generateHunt` (`functions/src/index.ts`, Region europ
 5. **Story** (`story.ts`): Im gewählten Genre (`genres.ts`: Beliebig, Science-Fiction, Fantasy, Krimi, Die drei ???, Action, MacGyver, Horror, Piraten, Agenten, Zeitreise, Märchen; Horror für Kinder unter 12 nur als harmloser Grusel) erzeugt Claude Titel, Intro, Kapitel, Rätsel (Zahl / Multiple Choice / Freitext), Lösung und 2 Tipps als JSON nach festem Schema. Zusätzlich geprüft: jede Station genau einmal, gültige Antworten, und **faktenbasierte Rätsel müssen ein wörtliches Zitat aus den mitgegebenen Fakten enthalten, in dem die Lösung steht** – sonst wird einmal mit Fehlerliste nachgefragt. Kapitel funktionieren in jeder Reihenfolge (für rotierte Gruppen). Pro Station gibt es außerdem einen Übergangstext, der nach dem gelösten Rätsel erscheint; erst nach „Weiter“ zeigt die Karte die nächste Station. „Mittel“ verlangt mindestens zwei Denkschritte und höchstens die Hälfte Multiple Choice, „schwer“ mindestens drei Denkschritte und höchstens ein Multiple Choice.
 6. **Speichern** unter `hunts/{id}`; der Spielleiter sieht Route, Lösungen und einen Link zum Teilen (`/?jagd=ID`).
 
+**Einwände annehmen:** Ist die Strecke länger als die gewählte Dauer, liegt das eigene Ziel an einer Hauptstraße oder gibt es zu wenige Orte, bietet die App einen Knopf an („Trotzdem so erzeugen – dauert ca. X Minuten“, „Mit 4 Stationen erzeugen“). Gleiche Eckdaten ergeben dieselbe Route, die angenommene Route bleibt also erhalten.
+
+**Einfache Orte:** Gibt es zu wenige besondere Orte, ergänzt die Ortssuche einfache Orte (Teich, Bücherschrank, Trinkbrunnen, Sportplatz, Bank, Briefkasten, Baum …), die schlechter bewertet werden und nur bei Bedarf zum Zug kommen.
+
+**Wünsche & Besonderheiten:** Freitext (bis 2000 Zeichen) für Anlass, Namen, Themenwunsch oder eine eigene Hintergrundgeschichte; Claude baut ihn ein, die Regeln (keine erfundenen Ortsfakten, Sicherheit) gelten weiter.
+
 Fehler bei Schlüsseln, Guthaben oder Kontingenten (Claude, OpenRouteService, Overpass) kommen als verständliche Meldung mit „Was tun?“ im Formular an (`functions/src/errors.ts`).
 
 ## Zugang und Kostenschutz
 
 - **Mitspielen** geht ohne Konto: Wer den Link `/?jagd=ID` hat, kann die Jagd laden (Firestore-Regel `get: if true`; IDs sind nicht zu erraten).
 - **Erstellen** nur mit Konto (E-Mail + Passwort mit Pflicht-Bestätigung, optional Google), bestätigter E-Mail **und** Eintrag in der Gästeliste. Das prüft ausschließlich die Cloud Function (`functions/src/access.ts`), nicht der Client.
-- **Gästeliste:** Firestore-Sammlung `allowlist/{email}` – nur Cloud Functions lesen und schreiben. Pflege über die Admin-Seite in der App (`/?admin`).
+- **Gästeliste:** Firestore-Sammlung `allowlist/{email}` – nur Cloud Functions lesen und schreiben. Pflege über die Admin-Seite in der App (`/?admin`). „Freischalten & per Mail einladen“ öffnet das eigene Mailprogramm mit fertiger Einladung (Link, Anleitung für iPhone/Android, Anmeldung) – wie bei der Hertha-App, ohne Mailserver. Alternativ 📤 Teilen (z. B. WhatsApp).
 - **Admins:** Firestore-Sammlung `admins/{uid}`, einmalig von Hand in der Firebase Console angelegt. Die eigene UID steht in der App unter 👤 → „Mein Konto“ (und in der Console unter Authentication → Nutzer).
 - **Limit:** 10 Jagden pro Konto und Monat, Admins unbegrenzt. Zusätzlich ein Sicherheitsnetz von 30 Jagden pro Tag für alle Nicht-Admins zusammen. Fehlgeschlagene Versuche zählen nicht.
 - **Ablösung der anonymen Anmeldung:** Wer die App früher anonym genutzt hat, bekommt beim ersten Anmelden seine alten Jagden ins neue Konto übertragen (`claimAnonymousHunts`); das anonyme Konto wird gelöscht.

@@ -27,6 +27,10 @@ export const huntParamsSchema = z.object({
   staggerMinutes: z.number().int().min(0).max(60),
   /** Genre der Geschichte; fehlt bei älteren App-Versionen */
   genre: z.enum(GENRE_KEYS).default('beliebig'),
+  /** Freitext des Spielleiters: Anlass, Namen, Themenwunsch, eigene Hintergrundgeschichte */
+  notes: z.string().trim().max(2000).optional(),
+  /** Einwände, die der Spielleiter ausdrücklich in Kauf nimmt */
+  accept: z.array(z.enum(['too_long', 'goal_at_road'])).optional(),
 })
 
 export type HuntParams = z.infer<typeof huntParamsSchema>
