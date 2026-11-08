@@ -17,8 +17,16 @@ import {
 import { UserFacingError, missingSecret } from './errors.js'
 import { distanceMeters } from './geo.js'
 import { fetchDistanceMatrix } from './ors.js'
-import { buildOverpassQuery, extractPois, fetchOverpass, isNearMajorRoad, thinOut } from './poi.js'
-import { assertFeasible, planBudget, searchArea, seededRandom, selectRoute } from './route.js'
+import {
+  buildOverpassQuery,
+  extractPois,
+  fetchOverpass,
+  isNearMajorRoad,
+  mergeOverpass,
+  thinOut,
+  type OverpassResult,
+} from './poi.js'
+import { assertFeasible, planBudget, routeSeed, searchArea, seededRandom, selectRoute } from './route.js'
 import { generateStory, type StationFacts } from './story.js'
 import { huntParamsSchema, type HuntDoc, type HuntParams, type Poi } from './types.js'
 import { fetchWikipediaExtract } from './wikipedia.js'
@@ -58,7 +66,11 @@ function toHttpsError(error: unknown, context: string): HttpsError {
   if (error instanceof HttpsError) return error
   if (error instanceof UserFacingError) {
     console.warn(`${context}: ${error.reason}`, error.message)
-    return new HttpsError(error.code, error.message, { reason: error.reason, action: error.action })
+    return new HttpsError(error.code, error.message, {
+      reason: error.reason,
+      action: error.action,
+      retry: error.retry,
+    })
   }
   console.error(`${context}: unerwarteter Fehler`, error)
   return new HttpsError('internal', 'Es ist ein unerwarteter Fehler aufgetreten.', {
@@ -276,21 +288,30 @@ async function buildHunt(
     assertFeasible(meters, params, budget, 'direct')
   }
 
-  // 1. Orte suchen; bei zu wenigen Treffern den Suchradius einmal vergrößern
+  // 1. Orte suchen: zuerst besondere Orte; gibt es zu wenige, auch einfache Orte (Teich, Bank, Baum …)
+  //    und notfalls in größerem Umkreis
   const area = searchArea(params, budget)
   const overpassOptions = { onFallback: () => report('places_fallback') }
-  let result = await fetchOverpass(buildOverpassQuery(area.center, area.radius), overpassOptions)
-  let pois = extractPois(result, params)
-  if (pois.length < params.stationCount * 2) {
-    result = await fetchOverpass(buildOverpassQuery(area.center, area.radius * 1.6), overpassOptions)
+  const enough = () => pois.length >= params.stationCount * 3
+  let result: OverpassResult = { elements: [] }
+  let pois: Poi[] = []
+  for (const [radius, tier] of [
+    [area.radius, 1],
+    [area.radius, 2],
+    [area.radius * 1.6, 1],
+    [area.radius * 1.6, 2],
+  ] as const) {
+    if (result.elements.length > 0 && enough()) break
+    result = mergeOverpass(result, await fetchOverpass(buildOverpassQuery(area.center, radius, tier), overpassOptions))
     pois = extractPois(result, params)
   }
-  if (params.goal && isNearMajorRoad(result, params.goal, params)) {
+  if (params.goal && !params.accept?.includes('goal_at_road') && isNearMajorRoad(result, params.goal, params)) {
     throw new UserFacingError(
       'failed-precondition',
       'goal_at_road',
       'Der Zielpunkt liegt direkt an einer Hauptverkehrsstraße.',
-      'Das Ziel ein Stück weiter weg setzen, z. B. in einen Park oder auf einen Platz.',
+      'Das Ziel ein Stück weiter weg setzen, z. B. in einen Park oder auf einen Platz – oder bewusst so lassen, wenn ihr dort gut aufpasst.',
+      { label: 'Ziel trotzdem verwenden', patch: { accept: ['goal_at_road'] } },
     )
   }
 
@@ -317,8 +338,8 @@ async function buildHunt(
   report('route')
   const matrix = await fetchDistanceMatrix([params.start, ...candidates.map((c) => c.position)], params.mode, keys.ors)
   const id = getFirestore().collection('hunts').doc().id
-  const seed = [...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7)
-  const plan = selectRoute(params.start, candidates, matrix, params, budget, seededRandom(seed), fixedGoal)
+  // Gleiche Eckdaten → gleiche Route, damit „Trotzdem erzeugen“ dieselbe Route liefert
+  const plan = selectRoute(params.start, candidates, matrix, params, budget, seededRandom(routeSeed(params)), fixedGoal)
   // Die längste Gruppenroute muss in die Dauer passen (10 % Spielraum, die Dauer ist eine Schätzung)
   assertFeasible(Math.max(...plan.groupMeters), params, budget, 'planned', 1.1)
   const chosen = [...plan.loop, plan.goal].map((i) => candidates[i])

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { distanceMeters } from './geo.js'
-import { assertFeasible, neededMinutes, planBudget, searchArea, seededRandom, selectRoute, startOffset } from './route.js'
+import {
+  assertFeasible,
+  neededMinutes,
+  planBudget,
+  routeSeed,
+  searchArea,
+  seededRandom,
+  selectRoute,
+  startOffset,
+} from './route.js'
 import type { HuntParams, Poi } from './types.js'
 
 const params: HuntParams = {
@@ -149,5 +158,39 @@ describe('assertFeasible', () => {
   it('erlaubt bei der geplanten Route etwas Spielraum', () => {
     // 2,8 km ≈ 40 min + 25 min = 65 min: über 60, aber innerhalb von 10 %
     expect(() => assertFeasible(2800, params, budget, 'planned', 1.1)).not.toThrow()
+  })
+})
+
+describe('Einwände annehmen', () => {
+  const budget = planBudget(params)
+
+  it('bietet bei zu langer Strecke „Trotzdem erzeugen“ an und akzeptiert das danach', () => {
+    try {
+      assertFeasible(3500, params, budget, 'planned')
+      throw new Error('hätte werfen sollen')
+    } catch (e) {
+      const err = e as { reason: string; retry?: { label: string; patch: { accept: string[] } } }
+      expect(err.reason).toBe('too_long')
+      expect(err.retry?.label).toMatch(/ca\. 75 Minuten/)
+      expect(err.retry?.patch.accept).toEqual(['too_long'])
+    }
+    expect(() => assertFeasible(3500, { ...params, accept: ['too_long'] }, budget, 'planned')).not.toThrow()
+  })
+
+  it('schlägt bei zu wenigen Orten weniger Stationen vor', () => {
+    const { pois, matrix } = grid()
+    const few = pois.slice(0, 4)
+    const small = matrix.slice(0, 5).map((r) => r.slice(0, 5))
+    try {
+      selectRoute(params.start, few, small, params, budget, seededRandom(1))
+      throw new Error('hätte werfen sollen')
+    } catch (e) {
+      expect((e as { retry?: { patch: unknown } }).retry?.patch).toEqual({ stationCount: 4 })
+    }
+  })
+
+  it('wählt bei gleichen Eckdaten dieselbe Route, unabhängig von Wünschen und Einwänden', () => {
+    expect(routeSeed(params)).toBe(routeSeed({ ...params, notes: 'Geburtstag', accept: ['too_long'] }))
+    expect(routeSeed(params)).not.toBe(routeSeed({ ...params, durationMinutes: 90 }))
   })
 })

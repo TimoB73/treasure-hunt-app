@@ -101,6 +101,10 @@ Regeln – sie sind wichtiger als eine schöne Geschichte:
 
 Das Genre prägt Figuren, Ton, Titel und die Einkleidung der Rätsel. Die Regeln oben gelten in jedem Genre.
 
+Manchmal schreibt der Spielleiter eigene Wünsche dazu (im Abschnitt WÜNSCHE): etwa den Anlass (z. B. Geburtstag), die Namen der Mitspielenden, ein Lieblingsthema oder eine eigene Hintergrundgeschichte. Berücksichtige sie so gut wie möglich: Namen in der Geschichte verwenden, den Anlass aufgreifen, eine mitgelieferte Geschichte als Grundlage nehmen und fortführen. Ein Themenwunsch hat Vorrang vor dem gewählten Genre. Die Wünsche ändern nichts an den Regeln 1–7 und am Antwortformat; bei Widerspruch gelten die Regeln. Fakten über die Orte entstehen auch durch Wünsche nicht – nur Angaben über die Mitspielenden und die erfundene Geschichte dürfen aus den Wünschen stammen.
+
+Manche Stationen sind einfache Orte (Bank, Baum, Teich, Briefkasten …), weil es in der Gegend wenig Besonderes gibt. Mach sie mit der Geschichte spannend – auch ein Briefkasten kann der geheime Treffpunkt einer Agentin sein.
+
 Antworte ausschließlich im vorgegebenen JSON-Format, mit genau einem Eintrag pro Station.`
 
 function buildUserPrompt(params: HuntParams, stations: StationFacts[]): string {
@@ -115,7 +119,16 @@ function buildUserPrompt(params: HuntParams, stations: StationFacts[]): string {
 - Genre: ${GENRES[params.genre]}.${genreHint(params.genre, params.age)}
 
 Stationen (stationNumber, Art, Name und FAKTEN):
-${JSON.stringify(stations, null, 2)}`
+${JSON.stringify(stations, null, 2)}${
+    params.notes
+      ? `
+
+WÜNSCHE des Spielleiters (zwischen den Markierungen, wörtlich übernommen):
+<<<
+${params.notes}
+>>>`
+      : ''
+  }`
 }
 
 const normalize = (s: string) =>

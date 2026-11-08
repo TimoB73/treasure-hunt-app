@@ -1,5 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { GeneratorError, generateHunt, type HuntParams, type ProgressStep } from '../game/generator'
+import {
+  GeneratorError,
+  generateHunt,
+  type AcceptableObjection,
+  type HuntParams,
+  type ProgressStep,
+  type RetryOption,
+} from '../game/generator'
 import { GENRES } from '../game/genres'
 import { useWakeLock } from '../hooks/useWakeLock'
 import type { LatLng } from '../lib/geo'
@@ -12,7 +19,7 @@ interface Props {
   onCancel: () => void
 }
 
-type Settings = Omit<HuntParams, 'start' | 'goal'>
+type Settings = Omit<HuntParams, 'start' | 'goal' | 'accept'>
 
 const DEFAULTS: Settings = {
   durationMinutes: 60,
@@ -24,6 +31,8 @@ const DEFAULTS: Settings = {
   staggerMinutes: 5,
   genre: 'beliebig',
 }
+
+const NOTES_MAX = 2000
 
 /** Texte zu den Schritten, die die Cloud Function tatsächlich meldet */
 const STEP_TEXT: Record<ProgressStep | 'start', string> = {
@@ -115,6 +124,8 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
   const [running, setRunning] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [step, setStep] = useState<ProgressStep | 'start'>('start')
+  // Bereits angenommene Einwände des letzten Versuchs – werden bei einem weiteren Vorschlag beibehalten
+  const [lastAccept, setLastAccept] = useState<AcceptableObjection[]>([])
   const [error, setError] = useState<GeneratorError | null>(null)
   useWakeLock(running)
 
@@ -153,19 +164,40 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
 
   const ready = start != null && (!customGoal || goal != null)
 
-  const submit = async () => {
+  /** Erzeugen; `accept` enthält Einwände, die der Spielleiter nach einer Rückfrage in Kauf nimmt */
+  const submit = async (overrides: Partial<Settings> = {}, accept: AcceptableObjection[] = []) => {
     if (!start || !ready) return
     setRunning(true)
     setElapsed(0)
     setStep('start')
     setError(null)
+    const params: HuntParams = {
+      ...settings,
+      ...overrides,
+      notes: settings.notes?.trim() || undefined,
+      start,
+      ...(customGoal && goal ? { goal } : {}),
+      ...(accept.length ? { accept } : {}),
+    }
     try {
-      onCreated(await generateHunt({ ...settings, start, ...(customGoal && goal ? { goal } : {}) }, setStep))
+      onCreated(await generateHunt(params, setStep))
     } catch (e) {
       setError(e instanceof GeneratorError ? e : new GeneratorError(String(e)))
+      setLastAccept(accept)
     } finally {
       setRunning(false)
     }
+  }
+
+  /** Vorschlag des Servers annehmen, z. B. „Trotzdem erzeugen“ oder „Mit 4 Stationen erzeugen“ */
+  const acceptRetry = (retry: RetryOption) => {
+    const accept = [...new Set([...lastAccept, ...(retry.patch.accept ?? [])])]
+    const overrides: Partial<Settings> = {}
+    if (retry.patch.stationCount) {
+      overrides.stationCount = retry.patch.stationCount
+      setSettings((s) => ({ ...s, stationCount: retry.patch.stationCount!, groupCount: Math.min(s.groupCount, retry.patch.stationCount! - 1) }))
+    }
+    submit(overrides, accept)
   }
 
   if (running) {
@@ -187,7 +219,16 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
 
   return (
     <>
-      {error && <ErrorNotice title={error.message} action={error.action} />}
+      {error && (
+        <ErrorNotice title={error.message} action={error.action}>
+          {error.retry && (
+            <PrimaryButton onClick={() => acceptRetry(error.retry!)}>✅ {error.retry.label}</PrimaryButton>
+          )}
+          {error.retry && (
+            <p className="text-center text-xs">… oder unten die Eckdaten ändern und neu erzeugen.</p>
+          )}
+        </ErrorNotice>
+      )}
 
       <Card title={customGoal ? 'Start und Ziel' : 'Startpunkt'}>
         {customGoal && (
@@ -290,6 +331,22 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
               ))}
             </div>
           </div>
+          <label className="grid gap-1">
+            <span className="text-sm font-medium">Wünsche & Besonderheiten (optional)</span>
+            <textarea
+              value={settings.notes ?? ''}
+              onChange={(e) => set('notes', e.target.value.slice(0, NOTES_MAX))}
+              rows={4}
+              placeholder="z. B. „Geburtstagsschatzsuche für Lena (8) mit Ben, Mia und Tom“, ein Wunschthema wie „Dinosaurier“ oder eine eigene Hintergrundgeschichte zum Einfügen"
+              className="rounded-xl border border-stone-300 bg-transparent px-3 py-2 text-sm dark:border-stone-700"
+            />
+            <span className="flex justify-between text-xs text-stone-500">
+              <span>Die KI baut das in Geschichte und Rätsel ein. Der Text wird an die KI übermittelt.</span>
+              <span className="shrink-0 tabular-nums">
+                {(settings.notes ?? '').length}/{NOTES_MAX}
+              </span>
+            </span>
+          </label>
           <Field label="Schwierigkeit">
             <Segmented
               value={settings.difficulty}
@@ -339,7 +396,7 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
       </Card>
 
       {customGoal && !goal && <p className="text-center text-sm text-stone-500">Bitte noch das Ziel auf der Karte setzen.</p>}
-      <PrimaryButton onClick={submit} disabled={!ready}>
+      <PrimaryButton onClick={() => submit()} disabled={!ready}>
         ✨ Jagd erzeugen
       </PrimaryButton>
       <button onClick={onCancel} className="text-sm text-stone-500 underline">

@@ -73,6 +73,12 @@ export function HuntOverview({ hunt, onPlay, onBack }: Props) {
           {params.groupCount > 1 && ` · ${params.groupCount} Gruppen, ${params.staggerMinutes} min versetzt`}
           {params.goal && ' · Ziel selbst gewählt'}
         </p>
+        {params.notes && (
+          <p className="mt-2 whitespace-pre-line rounded-lg bg-stone-100 p-2 text-xs text-stone-600 dark:bg-stone-800 dark:text-stone-300">
+            <span className="font-medium">Deine Wünsche: </span>
+            {params.notes}
+          </p>
+        )}
       </Card>
 
       <Card title="Route">

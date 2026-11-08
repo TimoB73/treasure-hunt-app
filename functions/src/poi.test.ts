@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { OVERPASS_ENDPOINTS, buildOverpassQuery, extractPois, fetchOverpass, thinOut, type OverpassResult } from './poi.js'
+import {
+  OVERPASS_ENDPOINTS,
+  buildOverpassQuery,
+  extractPois,
+  fetchOverpass,
+  mergeOverpass,
+  thinOut,
+  type OverpassResult,
+} from './poi.js'
 
 const road = {
   type: 'way' as const,
@@ -115,5 +123,34 @@ describe('fetchOverpass', () => {
   it('meldet verständlich, wenn alle Server zweimal ausfallen', async () => {
     const fake = (async () => new Response('', { status: 503 })) as unknown as typeof fetch
     await expect(fetchOverpass('q', { ...fast, fetchImpl: fake })).rejects.toThrow(/zwei Durchgängen/)
+  })
+})
+
+describe('einfache Orte', () => {
+  it('fragt einfache Orte getrennt und je Art begrenzt ab', () => {
+    const q = buildOverpassQuery({ lat: 48, lng: 11 }, 500, 2)
+    expect(q).toContain('[amenity=bench]')
+    expect(q).toMatch(/out center bb tags 80;/)
+    expect(q).not.toContain('[amenity=fountain]')
+    expect(q).toContain('highway~')
+  })
+
+  it('erkennt einfache Orte mit niedriger Punktzahl', () => {
+    const result: OverpassResult = {
+      elements: [
+        { type: 'node', id: 10, lat: 48.01, lon: 11.01, tags: { amenity: 'bench' } },
+        { type: 'node', id: 11, lat: 48.02, lon: 11.02, tags: { amenity: 'fountain', name: 'Brunnen' } },
+      ],
+    }
+    const pois = extractPois(result, { age: 30 })
+    const bench = pois.find((p) => p.kind === 'bench')!
+    expect(bench.kindLabel).toBe('Bank')
+    expect(bench.score).toBeLessThan(pois.find((p) => p.kind === 'fountain')!.score)
+  })
+
+  it('fügt Antworten ohne Doppelte zusammen', () => {
+    const a: OverpassResult = { elements: [{ type: 'node', id: 1 }] }
+    const b: OverpassResult = { elements: [{ type: 'node', id: 1 }, { type: 'node', id: 2 }] }
+    expect(mergeOverpass(a, b).elements.map((e) => e.id)).toEqual([1, 2])
   })
 })

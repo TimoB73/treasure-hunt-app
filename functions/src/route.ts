@@ -209,7 +209,7 @@ const roundUp = (minutes: number) => Math.ceil(minutes / 15) * 15
  */
 export function assertFeasible(routeMeters: number, params: HuntParams, budget: Budget, kind: 'direct' | 'planned', tolerance = 1): void {
   const needed = neededMinutes(routeMeters, params, budget)
-  if (needed <= params.durationMinutes * tolerance) return
+  if (needed <= params.durationMinutes * tolerance || params.accept?.includes('too_long')) return
   const walk = Math.ceil(routeMeters / budget.metersPerMinute)
   const how = params.mode === 'bike' ? 'mit dem Rad' : 'zu Fuß'
   const what =
@@ -223,6 +223,7 @@ export function assertFeasible(routeMeters: number, params: HuntParams, budget: 
     needed <= 240
       ? `Dauer auf mindestens ${Math.min(240, roundUp(needed))} Minuten erhöhen, weniger Stationen wählen${params.goal ? ' oder Start und Ziel näher zusammenlegen' : ''}.`
       : `Das ist für eine Jagd zu weit. Start und Ziel näher zusammenlegen oder weniger Stationen wählen.`,
+    { label: `Trotzdem so erzeugen – dauert dann ca. ${needed} Minuten`, patch: { accept: ['too_long'] } },
   )
 }
 
@@ -236,10 +237,23 @@ function goalUnreachable(params: HuntParams): UserFacingError {
 }
 
 function tooFewPlaces(params: HuntParams, found: number): UserFacingError {
+  // Vorschlag: so viele Stationen, wie es tatsächlich gibt (mindestens 3)
+  const possible = Math.min(found, params.stationCount - 1)
   return new UserFacingError(
     'failed-precondition',
     'too_few_places',
     `In der Umgebung gibt es nur ${found} geeignete Orte mit genug Abstand – für ${params.stationCount} Stationen reicht das nicht.`,
-    'Weniger Stationen, eine längere Dauer oder einen Startpunkt näher an Ortskern oder Park wählen.',
+    'Weniger Stationen, eine längere Dauer oder einen anderen Startpunkt wählen.',
+    possible >= 3 ? { label: `Mit ${possible} Stationen erzeugen`, patch: { stationCount: possible } } : undefined,
   )
+}
+
+/**
+ * Startwert für die Zufallsauswahl der Route aus den Eckdaten: Gleiche Eckdaten ergeben dieselbe Route.
+ * So bleibt die Route erhalten, wenn der Spielleiter nach einem Einwand „Trotzdem erzeugen“ wählt.
+ */
+export function routeSeed(params: HuntParams): number {
+  const { start, goal, durationMinutes, difficulty, age, mode, stationCount, groupCount } = params
+  const key = JSON.stringify([start, goal ?? null, durationMinutes, difficulty, age, mode, stationCount, groupCount])
+  return [...key].reduce((h, ch) => (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0, 7)
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { GeneratorError } from '../game/generator'
 import { manageAllowlist, type AllowlistEntry } from '../lib/account'
+import { INVITE_SUBJECT, inviteMailto, inviteText } from '../lib/invite'
 import { Card, PrimaryButton } from './Card'
 import { ErrorNotice } from './ErrorNotice'
 
@@ -29,9 +30,35 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
     run({ action: 'list' })
   }, [])
 
-  const add = async (e: FormEvent) => {
+  const appUrl = window.location.origin
+
+  /** Öffnet das eigene Mailprogramm mit fertiger Einladung (wie bei der Hertha-App) */
+  const mailInvite = (address: string) => {
+    window.location.href = inviteMailto(address, appUrl)
+  }
+
+  /** Einladung über das Teilen-Menü (z. B. WhatsApp); ohne Teilen-Menü wird der Text kopiert */
+  const shareInvite = async (address: string) => {
+    const text = inviteText(address, appUrl)
+    try {
+      if (navigator.share) await navigator.share({ title: INVITE_SUBJECT, text })
+      else {
+        await navigator.clipboard.writeText(text)
+        alert('Einladungstext kopiert – jetzt z. B. in WhatsApp einfügen.')
+      }
+    } catch {
+      // Teilen abgebrochen – kein Fehler
+    }
+  }
+
+  const add = async (e: FormEvent, invite: boolean) => {
     e.preventDefault()
-    if (await run({ action: 'add', email })) setEmail('')
+    const address = email.trim()
+    if (!address) return
+    if (await run({ action: 'add', email: address })) {
+      setEmail('')
+      if (invite) mailInvite(address)
+    }
   }
 
   return (
@@ -41,21 +68,31 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
           Nur Personen mit diesen E-Mail-Adressen dürfen Jagden erstellen (nach bestätigter E-Mail). Mitspielen geht
           für alle mit Link.
         </p>
-        <form onSubmit={add} className="mt-3 flex gap-2">
+        <form onSubmit={(e) => add(e, true)} className="mt-3 grid gap-2">
           <input
             type="email"
             required
             placeholder="name@beispiel.de"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="min-w-0 flex-1 rounded-xl border border-stone-300 bg-transparent px-3 py-2 dark:border-stone-700"
+            className="rounded-xl border border-stone-300 bg-transparent px-3 py-2 dark:border-stone-700"
           />
-          <div className="shrink-0">
-            <PrimaryButton type="submit" disabled={busy || !email.trim()}>
-              Hinzufügen
-            </PrimaryButton>
-          </div>
+          <PrimaryButton type="submit" disabled={busy || !email.trim()}>
+            ✉️ Freischalten & per Mail einladen
+          </PrimaryButton>
+          <button
+            type="button"
+            disabled={busy || !email.trim()}
+            onClick={(e) => add(e, false)}
+            className="text-sm text-stone-500 underline disabled:opacity-40"
+          >
+            Nur freischalten, ohne Mail
+          </button>
         </form>
+        <p className="mt-2 text-xs text-stone-500">
+          „Per Mail einladen“ öffnet dein Mailprogramm mit fertiger Einladung (Link, Anleitung für iPhone und Android,
+          Anmeldung) – du musst nur noch auf Senden tippen.
+        </p>
         {error && (
           <div className="mt-3">
             <ErrorNotice title={error.message} action={error.action} />
@@ -72,7 +109,13 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
           <ul className="divide-y divide-stone-200 dark:divide-stone-800">
             {entries.map((entry) => (
               <li key={entry.email} className="flex items-center justify-between gap-2 py-2">
-                <span className="break-all">{entry.email}</span>
+                <span className="min-w-0 flex-1 break-all">{entry.email}</span>
+                <button onClick={() => mailInvite(entry.email)} className="shrink-0 text-sm underline" aria-label="Per Mail einladen">
+                  ✉️
+                </button>
+                <button onClick={() => shareInvite(entry.email)} className="shrink-0 text-sm underline" aria-label="Einladung teilen">
+                  📤
+                </button>
                 <button
                   disabled={busy}
                   onClick={() => {

@@ -22,6 +22,18 @@ export interface HuntParams {
   staggerMinutes: number
   /** Fehlt bei Jagden, die vor Einführung der Genres erzeugt wurden */
   genre?: Genre
+  /** Freitext: Anlass, Namen, Themenwunsch oder eigene Hintergrundgeschichte – geht an die KI */
+  notes?: string
+  /** Einwände, die der Spielleiter ausdrücklich in Kauf nimmt (z. B. längere Dauer) */
+  accept?: AcceptableObjection[]
+}
+
+export type AcceptableObjection = 'too_long' | 'goal_at_road'
+
+/** Vorschlag des Servers, wie es trotz Einwand weitergehen kann (Knopf in der App) */
+export interface RetryOption {
+  label: string
+  patch: Partial<Pick<HuntParams, 'stationCount' | 'accept'>>
 }
 
 export interface GeneratedStation extends Station {
@@ -44,6 +56,7 @@ export class GeneratorError extends Error {
     message: string,
     readonly action?: string,
     readonly reason?: string,
+    readonly retry?: RetryOption,
   ) {
     super(message)
   }
@@ -52,8 +65,9 @@ export class GeneratorError extends Error {
 export function toGeneratorError(error: unknown): GeneratorError {
   if (error instanceof GeneratorError) return error
   if (error instanceof FirebaseError) {
-    const details = (error as FirebaseError & { details?: { reason?: string; action?: string } }).details
-    if (details?.reason) return new GeneratorError(error.message, details.action, details.reason)
+    const details = (error as FirebaseError & { details?: { reason?: string; action?: string; retry?: RetryOption } })
+      .details
+    if (details?.reason) return new GeneratorError(error.message, details.action, details.reason, details.retry)
     switch (error.code) {
       case 'functions/deadline-exceeded':
         return new GeneratorError(
@@ -78,8 +92,8 @@ export function toGeneratorError(error: unknown): GeneratorError {
       case 'functions/internal':
       case 'functions/not-found':
         return new GeneratorError(
-          'Der Generator auf dem Server ist nicht erreichbar.',
-          'Prüfen, ob die Cloud Function „generateHunt“ in europe-west3 deployt ist (siehe README, Abschnitt Cloud Functions).',
+          'Der Server der App ist gerade nicht erreichbar.',
+          'Kurz warten und erneut versuchen. Bleibt es dabei: unter GitHub → Actions prüfen, ob „Cloud Functions deployen“ grün ist.',
         )
     }
     return new GeneratorError(error.message)

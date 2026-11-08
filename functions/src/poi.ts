@@ -32,6 +32,10 @@ interface Category {
   filter: string
   /** Grundpunktzahl: wie gut eignet sich die Ortsart als Station */
   score: (age: number) => number
+  /** 1 = besonderer Ort, 2 = einfacher Ort als Ersatz, wenn es zu wenige besondere gibt */
+  tier?: 2
+  /** Höchstzahl je Abfrage – manche einfachen Orte (Bänke, Bäume) gibt es zu Tausenden */
+  limit?: number
 }
 
 const CATEGORIES: Category[] = [
@@ -44,6 +48,18 @@ const CATEGORIES: Category[] = [
   { kind: 'playground', label: 'Spielplatz', filter: '[leisure=playground]', score: (age) => (age < 12 ? 4 : 1) },
   { kind: 'park', label: 'Park', filter: '[leisure=park]', score: () => 2 },
   { kind: 'worship', label: 'Kirche', filter: '[amenity=place_of_worship]', score: () => 2.5 },
+  // Einfache Orte: nur als Ersatz, wenn es in der Gegend zu wenige besondere Orte gibt
+  { kind: 'pond', label: 'Teich', filter: '[water~"^(pond|lake)$"]', score: () => 1.5, tier: 2, limit: 40 },
+  { kind: 'bookcase', label: 'Bücherschrank', filter: '[amenity=public_bookcase]', score: () => 1.5, tier: 2, limit: 30 },
+  { kind: 'drinking_water', label: 'Trinkbrunnen', filter: '[amenity=drinking_water]', score: () => 1.2, tier: 2, limit: 30 },
+  { kind: 'pitch', label: 'Sportplatz', filter: '[leisure=pitch]', score: () => 1, tier: 2, limit: 40 },
+  { kind: 'picnic', label: 'Picknicktisch', filter: '[leisure=picnic_table]', score: () => 1, tier: 2, limit: 40 },
+  { kind: 'shelter', label: 'Unterstand', filter: '[amenity=shelter]', score: () => 1, tier: 2, limit: 30 },
+  { kind: 'board', label: 'Infotafel', filter: '[information~"^(board|map)$"]', score: () => 1, tier: 2, limit: 30 },
+  { kind: 'clock', label: 'Uhr', filter: '[amenity=clock]', score: () => 1, tier: 2, limit: 20 },
+  { kind: 'bench', label: 'Bank', filter: '[amenity=bench]', score: () => 0.8, tier: 2, limit: 80 },
+  { kind: 'post_box', label: 'Briefkasten', filter: '[amenity=post_box]', score: () => 0.8, tier: 2, limit: 40 },
+  { kind: 'tree', label: 'Baum', filter: '[natural=tree]', score: () => 0.5, tier: 2, limit: 80 },
 ]
 
 /** Hauptverkehrsstraßen, an denen keine Station liegen darf */
@@ -73,16 +89,35 @@ export const FACT_TAGS = [
   'wikipedia',
 ]
 
-export function buildOverpassQuery(center: LatLng, radius: number): string {
+/**
+ * Overpass-Abfrage für Orte und Hauptstraßen im Umkreis.
+ * `tier` 1 = besondere Orte, 2 = einfache Orte (Bänke, Teiche, Bäume …), je Art begrenzt.
+ */
+export function buildOverpassQuery(center: LatLng, radius: number, tier: 1 | 2 = 1): string {
   const around = `(around:${Math.round(radius)},${center.lat.toFixed(6)},${center.lng.toFixed(6)})`
-  const pois = CATEGORIES.map((c) => `  nwr${around}${c.filter};`).join('\n')
-  return `[out:json][timeout:40];
+  const roads = `way${around}[highway~"${MAJOR_ROADS}"];
+out geom;`
+  if (tier === 1) {
+    const pois = CATEGORIES.filter((c) => !c.tier).map((c) => `  nwr${around}${c.filter};`).join('\n')
+    return `[out:json][timeout:40];
 (
 ${pois}
 );
 out center bb tags;
-way${around}[highway~"${MAJOR_ROADS}"];
-out geom;`
+${roads}`
+  }
+  const simple = CATEGORIES.filter((c) => c.tier === 2)
+    .map((c, i) => `nwr${around}${c.filter}->.s${i};\n.s${i} out center bb tags ${c.limit ?? 30};`)
+    .join('\n')
+  return `[out:json][timeout:40];
+${simple}
+${roads}`
+}
+
+/** Fügt zwei Overpass-Antworten zusammen; doppelte Elemente zählen einmal */
+export function mergeOverpass(a: OverpassResult, b: OverpassResult): OverpassResult {
+  const seen = new Set(a.elements.map((e) => `${e.type}/${e.id}`))
+  return { elements: [...a.elements, ...b.elements.filter((e) => !seen.has(`${e.type}/${e.id}`))] }
 }
 
 interface OverpassElement {
