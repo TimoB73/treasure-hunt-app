@@ -20,4 +20,10 @@ describe('Einladung', () => {
     expect(link).toContain('%0D%0A')
     expect(link).not.toMatch(/%0A(?<!%0D%0A)/)
   })
+
+  it('nennt den Absender, wenn er angegeben ist', () => {
+    expect(inviteText('anna@example.org', url, 'Timo')).toContain('Timo hat dich zur Schatzsuche-App eingeladen')
+    expect(inviteText('anna@example.org', url, 'Timo').trim().endsWith('Timo')).toBe(true)
+    expect(inviteText('anna@example.org', url)).toContain('Du bist zur Schatzsuche-App eingeladen')
+  })
 })
