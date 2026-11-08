@@ -4,11 +4,11 @@
 
 export const INVITE_SUBJECT = 'Einladung zur Schatzsuche-App 🗝️'
 
-export function inviteText(email: string, url: string): string {
+export function inviteText(email: string, url: string, sender?: string | null): string {
   return [
     'Hallo!',
     '',
-    'Du bist zur Schatzsuche-App eingeladen 🗝️ – damit erstellst du in wenigen Minuten Schatzsuchen mit echten Orten in deiner Umgebung, einer spannenden Geschichte und Rätseln, z. B. für Kindergeburtstage oder Ausflüge.',
+    `${sender ? `${sender} hat dich` : 'Du bist'} zur Schatzsuche-App eingeladen 🗝️ – damit erstellst du in wenigen Minuten Schatzsuchen mit echten Orten in deiner Umgebung, einer spannenden Geschichte und Rätseln, z. B. für Kindergeburtstage oder Ausflüge.`,
     '',
     '📋 Dein Link zur App (lange drücken → „Kopieren“):',
     '',
@@ -39,12 +39,13 @@ export function inviteText(email: string, url: string): string {
     'Wer nur mitspielt, braucht weder App noch Konto: In der fertigen Jagd auf „Link für Mitspieler teilen“ tippen und den Link verschicken.',
     '',
     'Viel Spaß beim Schatzsuchen!',
+    ...(sender ? [sender] : []),
   ].join('\n')
 }
 
 /** mailto-Link: öffnet das eigene Mailprogramm mit fertiger Einladung */
-export function inviteMailto(email: string, url: string): string {
+export function inviteMailto(email: string, url: string, sender?: string | null): string {
   // Zeilenumbrüche als CRLF, damit auch Outlook die Absätze übernimmt
-  const body = encodeURIComponent(inviteText(email, url)).replace(/%0A/g, '%0D%0A')
+  const body = encodeURIComponent(inviteText(email, url, sender)).replace(/%0A/g, '%0D%0A')
   return `mailto:${encodeURIComponent(email).replace(/%40/g, '@')}?subject=${encodeURIComponent(INVITE_SUBJECT)}&body=${body}`
 }
