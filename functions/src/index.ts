@@ -32,6 +32,8 @@ import { huntParamsSchema, type HuntDoc, type HuntParams, type Poi } from './typ
 import { fetchWikipediaExtract } from './wikipedia.js'
 
 initializeApp()
+// Leere optionale Angaben (z. B. ohne Wünsche) einfach weglassen statt das Speichern abzulehnen
+getFirestore().settings({ ignoreUndefinedProperties: true })
 setGlobalOptions({ region: 'europe-west3', maxInstances: 3 })
 
 const anthropicKey = defineSecret('ANTHROPIC_API_KEY')

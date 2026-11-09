@@ -171,10 +171,13 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
     setElapsed(0)
     setStep('start')
     setError(null)
+    // Leere Angaben ganz weglassen: Firebase würde „undefined“ als null übertragen
+    const { notes, ...rest } = settings
+    const trimmedNotes = notes?.trim()
     const params: HuntParams = {
-      ...settings,
+      ...rest,
       ...overrides,
-      notes: settings.notes?.trim() || undefined,
+      ...(trimmedNotes ? { notes: trimmedNotes } : {}),
       start,
       ...(customGoal && goal ? { goal } : {}),
       ...(accept.length ? { accept } : {}),

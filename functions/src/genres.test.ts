@@ -29,4 +29,13 @@ describe('Genre', () => {
     expect(genreHint('horror', 16)).toMatch(/ohne Blut/)
     expect(genreHint('krimi', 8)).toBe('')
   })
+
+  it('akzeptiert leere optionale Angaben, wie Firebase sie überträgt (null)', () => {
+    const parsed = huntParamsSchema.parse({ ...base, notes: null, goal: null, accept: null })
+    expect(parsed.notes).toBeUndefined()
+    expect(parsed.goal).toBeUndefined()
+    expect(parsed.accept).toBeUndefined()
+    expect(huntParamsSchema.parse({ ...base, notes: '   ' }).notes).toBeUndefined()
+    expect(huntParamsSchema.parse({ ...base, notes: ' Geburtstag ' }).notes).toBe('Geburtstag')
+  })
 })

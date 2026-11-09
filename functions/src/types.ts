@@ -15,7 +15,7 @@ const latLngSchema = z.object({
 export const huntParamsSchema = z.object({
   start: latLngSchema,
   /** Vom Ersteller gewählter Zielpunkt; fehlt er, wählt der Generator einen Ort nahe am Start */
-  goal: latLngSchema.optional(),
+  goal: latLngSchema.nullish().transform((v) => v ?? undefined),
   durationMinutes: z.number().int().min(20).max(240),
   difficulty: z.enum(['leicht', 'mittel', 'schwer']),
   /** Alter des jüngsten Mitspielers */
@@ -28,9 +28,18 @@ export const huntParamsSchema = z.object({
   /** Genre der Geschichte; fehlt bei älteren App-Versionen */
   genre: z.enum(GENRE_KEYS).default('beliebig'),
   /** Freitext des Spielleiters: Anlass, Namen, Themenwunsch, eigene Hintergrundgeschichte */
-  notes: z.string().trim().max(2000).optional(),
+  // Firebase überträgt „kein Wert“ als null – leere Angaben gelten als nicht vorhanden
+  notes: z
+    .string()
+    .trim()
+    .max(2000)
+    .nullish()
+    .transform((v) => v || undefined),
   /** Einwände, die der Spielleiter ausdrücklich in Kauf nimmt */
-  accept: z.array(z.enum(['too_long', 'goal_at_road'])).optional(),
+  accept: z
+    .array(z.enum(['too_long', 'goal_at_road']))
+    .nullish()
+    .transform((v) => v ?? undefined),
 })
 
 export type HuntParams = z.infer<typeof huntParamsSchema>
