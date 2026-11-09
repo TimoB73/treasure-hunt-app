@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { GeneratorError, loadMyHunts, type GeneratedHunt } from '../game/generator'
 import { canCreate, type AccountState } from '../lib/account'
+import { formatDistance } from '../lib/geo'
+import { cachedPlaceName, reversePlaceName, type PlaceName } from '../lib/geocode'
 import { Card, PrimaryButton } from './Card'
 import { ErrorNotice } from './ErrorNotice'
 
@@ -12,9 +14,18 @@ interface Props {
   onOpenHunt: (id: string) => void
 }
 
+/** „Steglitz, Berlin · Deutschland“ – fehlende Teile werden weggelassen */
+function placeLabel(place: PlaceName | undefined): string {
+  if (!place) return 'Ort wird ermittelt …'
+  const local = [place.district, place.city].filter(Boolean).join(', ')
+  return [local, place.country].filter(Boolean).join(' · ') || 'Ort unbekannt'
+}
+
 function MyHunts({ uid, onOpenHunt }: { uid: string; onOpenHunt: (id: string) => void }) {
   const [hunts, setHunts] = useState<GeneratedHunt[] | null>(null)
   const [error, setError] = useState<GeneratorError | null>(null)
+
+  const [places, setPlaces] = useState<Record<string, PlaceName>>({})
 
   useEffect(() => {
     let active = true
@@ -25,6 +36,37 @@ function MyHunts({ uid, onOpenHunt }: { uid: string; onOpenHunt: (id: string) =>
       active = false
     }
   }, [uid])
+
+  // Ortsnamen zum Startpunkt: zuerst aus dem Gerätespeicher, fehlende nacheinander nachladen
+  // (der Suchdienst von OpenStreetMap erlaubt höchstens eine Anfrage pro Sekunde)
+  useEffect(() => {
+    if (!hunts) return
+    let active = true
+    const known: Record<string, PlaceName> = {}
+    const missing: GeneratedHunt[] = []
+    for (const h of hunts) {
+      const cached = cachedPlaceName(h.params.start)
+      if (cached) known[h.id] = cached
+      else missing.push(h)
+    }
+    setPlaces(known)
+    ;(async () => {
+      for (const h of missing) {
+        try {
+          const name = await reversePlaceName(h.params.start)
+          if (!active) return
+          setPlaces((p) => ({ ...p, [h.id]: name }))
+        } catch {
+          // Ortsname ist nur Zusatzinfo – bei Fehlern einfach weglassen
+        }
+        await new Promise((r) => setTimeout(r, 1100))
+        if (!active) return
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [hunts])
 
   return (
     <Card title="Meine Jagden">
@@ -40,9 +82,11 @@ function MyHunts({ uid, onOpenHunt }: { uid: string; onOpenHunt: (id: string) =>
             <li key={h.id}>
               <button onClick={() => onOpenHunt(h.id)} className="w-full py-2 text-left">
                 <span className="font-medium">{h.title}</span>
+                <span className="block text-xs text-stone-500">📍 {placeLabel(places[h.id])}</span>
                 <span className="block text-xs text-stone-500">
-                  {new Date(h.createdAt).toLocaleDateString('de-DE')} · {h.stations.length} Stationen ·{' '}
-                  {h.params.mode === 'bike' ? 'Fahrrad' : 'zu Fuß'}
+                  📏 {formatDistance(h.stats.routeMeters)} · ⏱ ca. {h.stats.estimatedMinutes} min ·{' '}
+                  {h.stations.length} Stationen · {h.params.mode === 'bike' ? 'Fahrrad' : 'zu Fuß'} ·{' '}
+                  {new Date(h.createdAt).toLocaleDateString('de-DE')}
                 </span>
               </button>
             </li>

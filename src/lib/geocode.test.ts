@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { searchPlaces } from './geocode'
+import { placeNameFromAddress, searchPlaces } from './geocode'
 
 describe('searchPlaces', () => {
   it('wandelt Treffer in Ort und Koordinaten um', async () => {
@@ -19,5 +19,23 @@ describe('searchPlaces', () => {
       throw new Error('sollte nicht aufgerufen werden')
     }) as unknown as typeof fetch
     expect(await searchPlaces('ab', fake)).toEqual([])
+  })
+})
+
+describe('placeNameFromAddress', () => {
+  it('Großstadt mit Ortsteil', () => {
+    expect(placeNameFromAddress({ country: 'Deutschland', city: 'Berlin', suburb: 'Steglitz', borough: 'Steglitz-Zehlendorf' })).toEqual({
+      country: 'Deutschland',
+      city: 'Berlin',
+      district: 'Steglitz',
+    })
+  })
+
+  it('Dorf ohne Ortsteil', () => {
+    expect(placeNameFromAddress({ country: 'Österreich', village: 'Alpbach' })).toEqual({
+      country: 'Österreich',
+      city: 'Alpbach',
+      district: null,
+    })
   })
 })
