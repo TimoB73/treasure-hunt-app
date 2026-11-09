@@ -13,6 +13,7 @@ import type { LatLng } from '../lib/geo'
 import { Card, PrimaryButton } from './Card'
 import { ErrorNotice } from './ErrorNotice'
 import { OverviewMap } from './OverviewMap'
+import { PlaceSearch } from './PlaceSearch'
 
 interface Props {
   onCreated: (huntId: string) => void
@@ -131,7 +132,8 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setSettings((s) => ({ ...s, [key]: value }))
 
-  const locate = () => {
+  /** `onlyIfEmpty`: beim Öffnen nur vorschlagen – einen schon gesuchten oder getippten Start nicht überschreiben */
+  const locate = (onlyIfEmpty = false) => {
     if (!('geolocation' in navigator)) {
       setLocateError('Dieses Gerät kann den Standort nicht bestimmen – bitte auf der Karte tippen.')
       return
@@ -140,7 +142,8 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
     setLocateError(null)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setStart({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        const here = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+        setStart((current) => (onlyIfEmpty && current ? current : here))
         setFitKey((k) => k + 1)
         setLocating(false)
       },
@@ -153,7 +156,7 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
   }
 
   // Beim Öffnen gleich den eigenen Standort als Start vorschlagen
-  useEffect(locate, [])
+  useEffect(() => locate(true), [])
 
   useEffect(() => {
     if (!running) return
@@ -250,11 +253,28 @@ export function GeneratorScreen({ onCreated, onCancel }: Props) {
             ))}
           </div>
         )}
+        <PlaceSearch
+          placeholder={customGoal && picking === 'goal' ? 'Ziel: Ort oder Adresse suchen' : 'Start: Ort oder Adresse suchen'}
+          onSelect={(position) => {
+            if (customGoal && picking === 'goal') setGoal(position)
+            else {
+              setStart(position)
+              setLocateError(null)
+            }
+            setFitKey((k) => k + 1)
+          }}
+        />
         <div className="h-64 overflow-hidden rounded-xl">
           <OverviewMap
             start={start}
             goal={customGoal ? goal : null}
-            onPick={(point) => (customGoal && picking === 'goal' ? setGoal(point) : setStart(point))}
+            onPick={(point) => {
+              if (customGoal && picking === 'goal') setGoal(point)
+              else {
+                setStart(point)
+                setLocateError(null)
+              }
+            }}
             fitKey={fitKey}
           />
         </div>
